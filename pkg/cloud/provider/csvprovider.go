@@ -389,6 +389,8 @@ func (c *CSVProvider) GetKey(l map[string]string, n *clustercache.Node) models.K
 	gpuCount = 0
 	if gpuc, ok := n.Status.Capacity["nvidia.com/gpu"]; ok { // TODO: support non-nvidia GPUs
 		gpuCount = gpuc.Value()
+	} else if gpuc, ok := n.Status.Capacity["huawei.com/Ascend910"]; ok { // support for
+		gpuCount = gpuc.Value()
 	}
 	return &csvKey{
 		ProviderID: strings.ToLower(id),

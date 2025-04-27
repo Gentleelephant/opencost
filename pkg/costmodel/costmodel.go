@@ -392,6 +392,10 @@ func (cm *CostModel) ComputeCostData(start, end time.Time) (map[string]*CostData
 					gpuReqCount = g.AsApproximateFloat64()
 				} else if g, ok := container.Resources.Limits["k8s.amazonaws.com/vgpu"]; ok {
 					gpuReqCount = g.AsApproximateFloat64()
+				} else if g, ok := container.Resources.Requests["huawei.com/Ascend910"]; ok {
+					gpuReqCount = g.AsApproximateFloat64()
+				} else if g, ok := container.Resources.Limits["huawei.com/Ascend910"]; ok {
+					gpuReqCount = g.AsApproximateFloat64()
 				}
 				GPUReqV := []*util.Vector{
 					{
@@ -1591,6 +1595,11 @@ func getGPUCount(cache clustercache.ClusterCache, n *clustercache.Node) (float64
 			resultVGPU := float64(vgpu.Value())
 			return resultGPU, resultVGPU, nil
 		}
+	}
+
+	// Case 4: huawei.com/Ascend910
+	if npu, ok := n.Status.Capacity["huawei.com/Ascend910"]; ok && npu.Value() != 0 {
+		return float64(npu.Value()), float64(npu.Value()), nil
 	}
 
 	// No GPU found
