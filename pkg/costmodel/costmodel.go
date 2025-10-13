@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/opencost/opencost/core/pkg/clusters"
+
 	"github.com/opencost/opencost/core/pkg/log"
+	"github.com/opencost/opencost/core/pkg/filter/allocation"
 	"github.com/opencost/opencost/core/pkg/opencost"
 	"github.com/opencost/opencost/core/pkg/util"
 	"github.com/opencost/opencost/core/pkg/util/promutil"
@@ -2492,7 +2494,7 @@ func measureTimeAsync(start time.Time, threshold time.Duration, name string, ch 
 	}
 }
 
-func (cm *CostModel) QueryAllocation(window opencost.Window, resolution, step time.Duration, aggregate []string, includeIdle, idleByNode, includeProportionalAssetResourceCosts, includeAggregatedMetadata, sharedLoadBalancer bool, accumulateBy opencost.AccumulateOption, shareIdle bool) (*opencost.AllocationSetRange, error) {
+func (cm *CostModel) QueryAllocation(window opencost.Window, resolution, step time.Duration, aggregate []string, includeIdle, idleByNode, includeProportionalAssetResourceCosts, includeAggregatedMetadata, sharedLoadBalancer bool, accumulateBy opencost.AccumulateOption, shareIdle bool, filterString string) (*opencost.AllocationSetRange, error) {
 	// Validate window is legal
 	if window.IsOpen() || window.IsNegative() {
 		return nil, fmt.Errorf("illegal window: %s", window)
@@ -2560,6 +2562,33 @@ func (cm *CostModel) QueryAllocation(window opencost.Window, resolution, step ti
 
 		stepStart = stepEnd
 		stepEnd = stepStart.Add(step)
+	}
+
+	// Apply allocation filter BEFORE aggregation if provided
+	if filterString != "" {
+		parser := allocation.NewAllocationFilterParser()
+		filterNode, err := parser.Parse(filterString)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filter: %w", err)
+		}
+		compiler := opencost.NewAllocationMatchCompiler(nil)
+		matcher, err := compiler.Compile(filterNode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile filter: %w", err)
+		}
+		filteredASR := opencost.NewAllocationSetRange()
+		for _, as := range asr.Slice() {
+			filteredAS := opencost.NewAllocationSet(as.Start(), as.End())
+			for _, alloc := range as.Allocations {
+				if matcher.Matches(alloc) {
+					filteredAS.Set(alloc)
+				}
+			}
+			if filteredAS.Length() > 0 {
+				filteredASR.Append(filteredAS)
+			}
+		}
+		asr = filteredASR
 	}
 
 	// Set aggregation options and aggregate

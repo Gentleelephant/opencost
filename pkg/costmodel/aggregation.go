@@ -2359,7 +2359,7 @@ func (a *Accesses) ComputeAllocationHandlerSummaryTopline(w http.ResponseWriter,
 	shareIdle := qp.GetBool("shareIdle", false)
 	accumulateBy := opencost.ParseAccumulate(qp.Get("accumulate", ""))
 
-	asr, err := a.Model.QueryAllocation(window, resolution, step, aggregateBy, includeIdle, idleByNode, false, false, false, accumulateBy, shareIdle)
+	asr, err := a.Model.QueryAllocation(window, resolution, step, aggregateBy, includeIdle, idleByNode, false, false, false, accumulateBy, shareIdle, "")
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "bad request") {
 			WriteError(w, BadRequest(err.Error()))
@@ -2672,7 +2672,7 @@ func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.Respo
 		accumulateBy = opencost.AccumulateOptionAll
 	}
 
-	asr, err := a.Model.QueryAllocation(window, resolution, step, nil, true, false, false, false, false, accumulateBy, false)
+	asr, err := a.Model.QueryAllocation(window, resolution, step, nil, true, false, false, false, false, accumulateBy, false, "")
 	if err != nil {
 		WriteError(w, InternalServerError(err.Error()))
 		return
@@ -2741,11 +2741,6 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	filterString := qp.Get("filter", "")
-	filter, err := buildAllocationFilter(filterString)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
-		return
-	}
 
 	// Resolution is an optional parameter, defaulting to the configured ETL
 	// resolution.
@@ -2797,7 +2792,7 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 
 	shareIdle := qp.GetBool("shareIdle", false)
 
-	asr, err := a.Model.QueryAllocation(window, resolution, step, aggregateBy, includeIdle, idleByNode, includeProportionalAssetResourceCosts, includeAggregatedMetadata, sharedLoadBalancer, accumulateBy, shareIdle)
+	asr, err := a.Model.QueryAllocation(window, resolution, step, aggregateBy, includeIdle, idleByNode, includeProportionalAssetResourceCosts, includeAggregatedMetadata, sharedLoadBalancer, accumulateBy, shareIdle, filterString)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "bad request") {
 			WriteError(w, BadRequest(err.Error()))
@@ -2808,17 +2803,12 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	for _, as := range asr.Allocations {
-		for key, alloc := range as.Allocations {
-			if !filter.Matches(alloc) {
-				delete(as.Allocations, key)
-			}
-		}
-	}
 	resp := WrapData(asr, nil)
 	a.setQueryCacheResponse("allocation", r, resp)
 	w.Write(resp)
 }
+
+
 
 // The below was transferred from a different package in order to maintain
 // previous behavior. Ultimately, we should clean this up at some point.
