@@ -2763,7 +2763,7 @@ func computeIdleAllocations(allocSet *opencost.AllocationSet, assetSet *opencost
 			Properties: &opencost.AllocationProperties{
 				Cluster:    assetTotal.Cluster,
 				Node:       assetTotal.Node,
-				ProviderID: assetTotal.Node,
+				ProviderID: assetTotal.ProviderID,
 			},
 			Start:   assetTotal.Start,
 			End:     assetTotal.End,
