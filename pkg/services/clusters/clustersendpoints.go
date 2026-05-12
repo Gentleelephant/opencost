@@ -18,6 +18,9 @@ type DataEnvelope struct {
 	Data   interface{} `json:"data"`
 }
 
+// RoutePrefix is the API path prefix for all CostWize routes
+const RoutePrefix = "/kapis/costwise.wiztelemetry.io/v1alpha1"
+
 // ClusterManagerHTTPService is an implementation of HTTPService which provides
 // the frontend with the ability to manage stored cluster definitions.
 type ClusterManagerHTTPService struct {
@@ -33,9 +36,9 @@ func NewClusterManagerHTTPService(manager *ClusterManager) *ClusterManagerHTTPSe
 
 // Register assigns the endpoints and returns an error on failure.
 func (cme *ClusterManagerHTTPService) Register(router *httprouter.Router) error {
-	router.GET("/clusters", cme.GetAllClusters)
-	router.PUT("/clusters", cme.PutCluster)
-	router.DELETE("/clusters/:id", cme.DeleteCluster)
+	router.GET(RoutePrefix+"/clusters", cme.GetAllClusters)
+	router.PUT(RoutePrefix+"/clusters", cme.PutCluster)
+	router.DELETE(RoutePrefix+"/clusters/:id", cme.DeleteCluster)
 
 	return nil
 }

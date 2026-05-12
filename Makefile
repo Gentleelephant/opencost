@@ -13,3 +13,19 @@ GO_FLAGS     := -ldflags "-extldflags \"-static\" -s -w $(GO_LDFLAGS)"
 .PHONY: go/bin
 go/bin:
 	CGO_ENABLED=0 $(GO) build $(GO_FLAGS) ./cmd/costmodel
+
+.PHONY: swagger-verify
+swagger-verify:
+	env -u GOROOT $(GO) run ./tools/swaggercheck -mode static
+
+.PHONY: swagger-smoke-minimal
+swagger-smoke-minimal:
+	env -u GOROOT $(GO) run ./tools/swaggercheck -mode smoke -profile minimal-local -start-local
+
+.PHONY: swagger-params
+swagger-params:
+	env -u GOROOT $(GO) run ./tools/swaggercheck -mode params
+
+.PHONY: swagger-generate
+swagger-generate:
+	env -u GOROOT swag init -g cmd/costmodel/main.go -o docs

@@ -1,634 +1,1689 @@
 {
-  "openapi": "3.0.1",
-  "info": {
-    "title": "OpenCost API",
-    "description": "The OpenCost API provides real-time and historical reporting of Kubernetes cloud costs.",
-    "license": {
-      "name": "Apache 2.0",
-      "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+    "swagger": "2.0",
+    "info": {
+        "description": "The OpenCost API provides real-time and historical reporting of Kubernetes cloud costs.",
+        "title": "OpenCost API",
+        "contact": {},
+        "license": {
+            "name": "Apache 2.0",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "0.1"
     },
-    "version": "0.1"
-  },
-  "servers": [
-    {
-    "url": "http://localhost:9003",
-    "description": "kubectl port-forward --namespace opencost service/opencost 9003"
-  }
-  ],
-  "paths": {
-    "/allocation": {
-      "get": {
-        "summary": "query for costs and resources allocated to Kubernetes workloads",
-        "description": "The standard OpenCost API query for costs and resources allocated to Kubernetes workloads. You may specify the `window` date range, the Kubernetes primitive to `aggregate` on, the `step` for the duration of returned sets, and the `resolution` for the duration to use for Prometheus queries.",
-        "parameters": [
-          {
-          "name": "window",
-          "in": "query",
-          "description": "Duration of time over which to query. Accepts: words like `today`, `week`, `month`, `yesterday`, `lastweek`, `lastmonth`; durations like `30m`, `12h`, `7d`; [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) date pairs like `2021-01-02T15:04:05Z,2021-02-02T15:04:05Z`; Unix timestamps like `1578002645,1580681045`.",
-          "required": true,
-          "style": "form",
-          "explode": true,
-          "schema": {
-            "type": "string"
-          },
-          "examples": {
-            "today": {
-              "summary": "The current day",
-              "value": "today"
-            },
-            "month": {
-              "summary": "The month-to-date",
-              "value": "month"
-            },
-            "lastweek": {
-              "summary": "The previous week",
-              "value": "lastweek"
-            },
-            "30m": {
-              "summary": "The last 30 minutes",
-              "value": "30m"
-            },
-            "12h": {
-              "summary": "The last 12 hours",
-              "value": "12h"
-            },
-            "7d": {
-              "summary": "The previous 7 days",
-              "value": "7d"
-            },
-            "range": {
-              "summary": "A custom RFC3339 date range",
-              "value": "2023-01-18T10:30:00Z,2023-01-19T10:30:00Z"
-            },
-            "unix": {
-              "summary": "A custom Unix timestamp range",
-              "value": "1674073869,1674193869"
-            }
-          }
-        },
-          {
-          "name": "aggregate",
-          "in": "query",
-          "description": "Field by which to aggregate the results. Accepts: `all`, `cluster`, `node`, `namespace`, `controllerKind`, `controller`, `service`, `pod`, `container`, `label:<name>`, and `annotation:<name>`. Also accepts comma-separated lists for multi-aggregation, like `namespace,label:app`. Defaults to `cluster,node,namespace,pod,container`.",
-          "required": false,
-          "style": "form",
-          "explode": true,
-          "schema": {
-            "type": "string"
-          },
-          "examples": {
-            "cluster": {
-              "summary": "Aggregates by the cluster.",
-              "value": "cluster"
-            },
-            "node": {
-              "summary": "Aggregates by the compute nodes in the cluster.",
-              "value": "node"
-            },
-            "namespace": {
-              "summary": "Aggregates by the namespaces in the cluster.",
-              "value": "namespace"
-            },
-            "controllerKind": {
-              "summary": "Aggregates by the kinds of controllers present in the cluster.",
-              "value": "controllerKind"
-            },
-            "controller": {
-              "summary": "Aggregates by the individual controllers within the cluster.",
-              "value": "controller"
-            },
-            "service": {
-              "summary": "Aggregates by the services within the cluster.",
-              "value": "service"
-            },
-            "pod": {
-              "summary": "Aggregates by the individual pods within the cluster",
-              "value": "pod"
-            },
-            "container": {
-              "summary": "Aggregates by the containers present in the cluster",
-              "value": "container"
-            },
-            "all": {
-              "summary": "Aggregates into a single allocation",
-              "value": "all"
-            }
-          }
-        },
-          {
-          "name": "step",
-          "in": "query",
-          "description": "Duration of a single allocation set. If unspecified, this defaults to the window, so that you receive exactly one set for the entire window. If specified, it works chronologically backward, querying in durations of step until the full window is covered. Default is `window`",
-          "required": false,
-          "style": "form",
-          "explode": true,
-          "schema": {
-            "type": "string"
-          },
-          "examples": {
-            "30m": {
-              "summary": "30 minute steps over the duration of the window.",
-              "value": "30m"
-            },
-            "2h": {
-              "summary": "2 hour steps over the duration of the window",
-              "value": "2h"
-            },
-            "1d": {
-              "summary": "Daily steps over the duration of the window (ie. `lastweek` or `month`",
-              "value": "1d"
-            }
-          }
-        },
-          {
-          "name": "resolution",
-          "in": "query",
-          "description": "Duration to use as resolution in Prometheus queries. Smaller values (i.e. higher resolutions) will provide better accuracy, but worse performance (i.e. slower query time, higher memory use). Larger values (i.e. lower resolutions) will perform better, but at the expense of lower accuracy for short-running workloads. Default is `1m`",
-          "required": false,
-          "style": "form",
-          "explode": true,
-          "schema": {
-            "type": "string"
-          },
-          "examples": {
-            "1m": {
-              "summary": "Highly accurate, slower query.",
-              "value": "1m"
-            },
-            "30m": {
-              "summary": "Less accurate, faster query. Not recommended for short-lived workloads.",
-              "value": "30m"
-            }
-          }
-        }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success with `window` of `2d` and `aggregate` by `namespace`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/inline_response_200"
-                },
-                "examples": {
-                  "0": {
-                    "value": "{\"code\":200,\"status\":\"success\",\"data\":[{\"kube-system\":{\"name\":\"kube-system\",\"properties\":{\"cluster\":\"cluster-one\",\"namespace\":\"kube-system\"},\"window\":{\"start\":\"2023-01-18T11:38:45Z\",\"end\":\"2023-01-20T11:38:45Z\"},\"start\":\"2023-01-18T11:38:45Z\",\"end\":\"2023-01-20T11:38:00Z\",\"minutes\":2879.235705,\"cpuCores\":0.449881,\"cpuCoreRequestAverage\":0.449881,\"cpuCoreUsageAverage\":0.009417,\"cpuCoreHours\":21.588536,\"cpuCost\":0.408822,\"cpuCostAdjustment\":0.000000,\"cpuEfficiency\":0.020932,\"gpuCount\":0.000000,\"gpuHours\":0.000000,\"gpuCost\":0.000000,\"gpuCostAdjustment\":0.000000,\"networkTransferBytes\":0.000000,\"networkReceiveBytes\":0.000000,\"networkCost\":0.000000,\"networkCostAdjustment\":0.000000,\"loadBalancerCost\":0.000000,\"loadBalancerCostAdjustment\":0.000000,\"pvBytes\":0.000000,\"pvByteHours\":0.000000,\"pvCost\":0.000000,\"pvs\":null,\"pvCostAdjustment\":0.000000,\"ramBytes\":146761671.651553,\"ramByteRequestAverage\":146761671.651553,\"ramByteUsageAverage\":125495250.508328,\"ramByteHours\":7042690751.326794,\"ramCost\":0.016647,\"ramCostAdjustment\":0.000000,\"ramEfficiency\":0.855096,\"sharedCost\":0.000000,\"externalCost\":0.000000,\"totalCost\":0.425469,\"totalEfficiency\":0.053569,\"rawAllocationOnly\":null},\"opencost\":{\"name\":\"opencost\",\"properties\":{\"cluster\":\"cluster-one\",\"node\":\"ip-192-168-20-42.ap-southeast-2.compute.internal\",\"controller\":\"opencost\",\"controllerKind\":\"deployment\",\"namespace\":\"opencost\",\"pod\":\"opencost-75dc7dcc49-xdx5t\",\"providerID\":\"i-064548f89b9d35c11\"},\"window\":{\"start\":\"2023-01-18T11:38:45Z\",\"end\":\"2023-01-20T11:38:45Z\"},\"start\":\"2023-01-18T11:38:45Z\",\"end\":\"2023-01-20T11:38:00Z\",\"minutes\":2879.235705,\"cpuCores\":0.019995,\"cpuCoreRequestAverage\":0.019995,\"cpuCoreUsageAverage\":0.001821,\"cpuCoreHours\":0.959490,\"cpuCost\":0.018170,\"cpuCostAdjustment\":0.000000,\"cpuEfficiency\":0.091055,\"gpuCount\":0.000000,\"gpuHours\":0.000000,\"gpuCost\":0.000000,\"gpuCostAdjustment\":0.000000,\"networkTransferBytes\":0.000000,\"networkReceiveBytes\":0.000000,\"networkCost\":0.000000,\"networkCostAdjustment\":0.000000,\"loadBalancerCost\":0.000000,\"loadBalancerCostAdjustment\":0.000000,\"pvBytes\":0.000000,\"pvByteHours\":0.000000,\"pvCost\":0.000000,\"pvs\":null,\"pvCostAdjustment\":0.000000,\"ramBytes\":109970800.411162,\"ramByteRequestAverage\":109970800.411162,\"ramByteUsageAverage\":35525920.971352,\"ramByteHours\":5277197583.375299,\"ramCost\":0.012474,\"ramCostAdjustment\":0.000000,\"ramEfficiency\":0.323049,\"sharedCost\":0.000000,\"externalCost\":0.000000,\"totalCost\":0.030644,\"totalEfficiency\":0.185490,\"rawAllocationOnly\":null},\"prometheus\":{\"name\":\"prometheus\",\"properties\":{\"cluster\":\"cluster-one\",\"namespace\":\"prometheus\"},\"window\":{\"start\":\"2023-01-18T11:38:45Z\",\"end\":\"2023-01-20T11:38:45Z\"},\"start\":\"2023-01-18T11:38:45Z\",\"end\":\"2023-01-20T11:38:00Z\",\"minutes\":2879.235705,\"cpuCores\":0.000000,\"cpuCoreRequestAverage\":0.000000,\"cpuCoreUsageAverage\":0.007793,\"cpuCoreHours\":0.000000,\"cpuCost\":0.000000,\"cpuCostAdjustment\":0.000000,\"cpuEfficiency\":0.000000,\"gpuCount\":0.000000,\"gpuHours\":0.000000,\"gpuCost\":0.000000,\"gpuCostAdjustment\":0.000000,\"networkTransferBytes\":0.000000,\"networkReceiveBytes\":0.000000,\"networkCost\":0.000000,\"networkCostAdjustment\":0.000000,\"loadBalancerCost\":0.000000,\"loadBalancerCostAdjustment\":0.000000,\"pvBytes\":0.000000,\"pvByteHours\":0.000000,\"pvCost\":0.000000,\"pvs\":null,\"pvCostAdjustment\":0.000000,\"ramBytes\":0.000000,\"ramByteRequestAverage\":0.000000,\"ramByteUsageAverage\":287770105.329488,\"ramByteHours\":0.000000,\"ramCost\":0.000000,\"ramCostAdjustment\":0.000000,\"ramEfficiency\":0.000000,\"sharedCost\":0.000000,\"externalCost\":0.000000,\"totalCost\":0.000000,\"totalEfficiency\":0.000000,\"rawAllocationOnly\":null}}]}"
-                  }
+    "host": "localhost:9003",
+    "basePath": "/",
+    "paths": {
+        "/aggregatedCostModel": {
+            "get": {
+                "description": "查询聚合后的成本模型数据，支持按窗口、聚合维度等参数筛选",
+                "tags": [
+                    "Cost Model"
+                ],
+                "summary": "聚合成本模型查询",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度",
+                        "name": "aggregation",
+                        "in": "query",
+                        "x-example": "namespace"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤类型",
+                        "name": "filterType",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤值",
+                        "name": "filterValue",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回聚合后的成本数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
                 }
-              }
             }
-          }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "inline_response_200": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "opencost": {
-                  "type": "object",
-                  "properties": {
-                    "cpuCoreHours": {
-                      "type": "number"
-                    },
-                    "gpuCostAdjustment": {
-                      "type": "number"
-                    },
-                    "ramEfficiency": {
-                      "type": "number"
-                    },
-                    "loadBalancerCost": {
-                      "type": "number"
-                    },
-                    "gpuCost": {
-                      "type": "number"
-                    },
-                    "networkTransferBytes": {
-                      "type": "number"
-                    },
-                    "sharedCost": {
-                      "type": "number"
-                    },
-                    "pvCost": {
-                      "type": "number"
-                    },
-                    "totalEfficiency": {
-                      "type": "number"
-                    },
-                    "ramCostAdjustment": {
-                      "type": "number"
-                    },
-                    "pvByteHours": {
-                      "type": "number"
-                    },
-                    "networkCost": {
-                      "type": "number"
-                    },
-                    "ramByteUsageAverage": {
-                      "type": "number"
-                    },
-                    "end": {
-                      "type": "string"
-                    },
-                    "ramByteHours": {
-                      "type": "number"
-                    },
-                    "cpuCoreUsageAverage": {
-                      "type": "number"
-                    },
-                    "gpuCount": {
-                      "type": "number"
-                    },
-                    "cpuCostAdjustment": {
-                      "type": "number"
-                    },
-                    "externalCost": {
-                      "type": "number"
-                    },
-                    "minutes": {
-                      "type": "number"
-                    },
-                    "gpuHours": {
-                      "type": "number"
-                    },
-                    "loadBalancerCostAdjustment": {
-                      "type": "number"
-                    },
-                    "pvCostAdjustment": {
-                      "type": "number"
-                    },
-                    "ramCost": {
-                      "type": "number"
-                    },
-                    "start": {
-                      "type": "string"
-                    },
-                    "pvs": {},
-                    "cpuCost": {
-                      "type": "number"
-                    },
-                    "ramBytes": {
-                      "type": "number"
-                    },
-                    "networkCostAdjustment": {
-                      "type": "number"
-                    },
-                    "cpuCores": {
-                      "type": "number"
-                    },
-                    "pvBytes": {
-                      "type": "number"
-                    },
-                    "cpuEfficiency": {
-                      "type": "number"
-                    },
-                    "rawAllocationOnly": {},
-                    "name": {
-                      "type": "string"
-                    },
-                    "cpuCoreRequestAverage": {
-                      "type": "number"
-                    },
-                    "networkReceiveBytes": {
-                      "type": "number"
-                    },
-                    "window": {
-                      "type": "object",
-                      "properties": {
-                        "start": {
-                          "type": "string"
-                        },
-                        "end": {
-                          "type": "string"
+        },
+        "/allNodePricing": {
+            "get": {
+                "description": "获取集群中所有节点的定价数据",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询所有节点定价",
+                "responses": {
+                    "200": {
+                        "description": "返回所有节点的定价数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
                         }
-                      }
-                    },
-                    "properties": {
-                      "type": "object",
-                      "properties": {
-                        "cluster": {
-                          "type": "string"
-                        },
-                        "node": {
-                          "type": "string"
-                        },
-                        "controller": {
-                          "type": "string"
-                        },
-                        "pod": {
-                          "type": "string"
-                        },
-                        "providerID": {
-                          "type": "string"
-                        },
-                        "namespace": {
-                          "type": "string"
-                        },
-                        "controllerKind": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "totalCost": {
-                      "type": "number"
-                    },
-                    "ramByteRequestAverage": {
-                      "type": "number"
                     }
-                  }
-                },
-                "kube-system": {
-                  "type": "object",
-                  "properties": {
-                    "cpuCoreHours": {
-                      "type": "number"
-                    },
-                    "gpuCostAdjustment": {
-                      "type": "number"
-                    },
-                    "ramEfficiency": {
-                      "type": "number"
-                    },
-                    "loadBalancerCost": {
-                      "type": "number"
-                    },
-                    "gpuCost": {
-                      "type": "number"
-                    },
-                    "networkTransferBytes": {
-                      "type": "number"
-                    },
-                    "sharedCost": {
-                      "type": "number"
-                    },
-                    "pvCost": {
-                      "type": "number"
-                    },
-                    "totalEfficiency": {
-                      "type": "number"
-                    },
-                    "ramCostAdjustment": {
-                      "type": "number"
-                    },
-                    "pvByteHours": {
-                      "type": "number"
-                    },
-                    "networkCost": {
-                      "type": "number"
-                    },
-                    "ramByteUsageAverage": {
-                      "type": "number"
-                    },
-                    "end": {
-                      "type": "string"
-                    },
-                    "ramByteHours": {
-                      "type": "number"
-                    },
-                    "cpuCoreUsageAverage": {
-                      "type": "number"
-                    },
-                    "gpuCount": {
-                      "type": "number"
-                    },
-                    "cpuCostAdjustment": {
-                      "type": "number"
-                    },
-                    "externalCost": {
-                      "type": "number"
-                    },
-                    "minutes": {
-                      "type": "number"
-                    },
-                    "gpuHours": {
-                      "type": "number"
-                    },
-                    "loadBalancerCostAdjustment": {
-                      "type": "number"
-                    },
-                    "pvCostAdjustment": {
-                      "type": "number"
-                    },
-                    "ramCost": {
-                      "type": "number"
-                    },
-                    "start": {
-                      "type": "string"
-                    },
-                    "pvs": {},
-                    "cpuCost": {
-                      "type": "number"
-                    },
-                    "ramBytes": {
-                      "type": "number"
-                    },
-                    "networkCostAdjustment": {
-                      "type": "number"
-                    },
-                    "cpuCores": {
-                      "type": "number"
-                    },
-                    "pvBytes": {
-                      "type": "number"
-                    },
-                    "cpuEfficiency": {
-                      "type": "number"
-                    },
-                    "rawAllocationOnly": {},
-                    "name": {
-                      "type": "string"
-                    },
-                    "cpuCoreRequestAverage": {
-                      "type": "number"
-                    },
-                    "networkReceiveBytes": {
-                      "type": "number"
-                    },
-                    "window": {
-                      "type": "object",
-                      "properties": {
-                        "start": {
-                          "type": "string"
-                        },
-                        "end": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "properties": {
-                      "type": "object",
-                      "properties": {
-                        "cluster": {
-                          "type": "string"
-                        },
-                        "namespace": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "totalCost": {
-                      "type": "number"
-                    },
-                    "ramByteRequestAverage": {
-                      "type": "number"
-                    }
-                  }
-                },
-                "prometheus": {
-                  "type": "object",
-                  "properties": {
-                    "cpuCoreHours": {
-                      "type": "number"
-                    },
-                    "gpuCostAdjustment": {
-                      "type": "number"
-                    },
-                    "ramEfficiency": {
-                      "type": "number"
-                    },
-                    "loadBalancerCost": {
-                      "type": "number"
-                    },
-                    "gpuCost": {
-                      "type": "number"
-                    },
-                    "networkTransferBytes": {
-                      "type": "number"
-                    },
-                    "sharedCost": {
-                      "type": "number"
-                    },
-                    "pvCost": {
-                      "type": "number"
-                    },
-                    "totalEfficiency": {
-                      "type": "number"
-                    },
-                    "ramCostAdjustment": {
-                      "type": "number"
-                    },
-                    "pvByteHours": {
-                      "type": "number"
-                    },
-                    "networkCost": {
-                      "type": "number"
-                    },
-                    "ramByteUsageAverage": {
-                      "type": "number"
-                    },
-                    "end": {
-                      "type": "string"
-                    },
-                    "ramByteHours": {
-                      "type": "number"
-                    },
-                    "cpuCoreUsageAverage": {
-                      "type": "number"
-                    },
-                    "gpuCount": {
-                      "type": "number"
-                    },
-                    "cpuCostAdjustment": {
-                      "type": "number"
-                    },
-                    "externalCost": {
-                      "type": "number"
-                    },
-                    "minutes": {
-                      "type": "number"
-                    },
-                    "gpuHours": {
-                      "type": "number"
-                    },
-                    "loadBalancerCostAdjustment": {
-                      "type": "number"
-                    },
-                    "pvCostAdjustment": {
-                      "type": "number"
-                    },
-                    "ramCost": {
-                      "type": "number"
-                    },
-                    "start": {
-                      "type": "string"
-                    },
-                    "pvs": {},
-                    "cpuCost": {
-                      "type": "number"
-                    },
-                    "ramBytes": {
-                      "type": "number"
-                    },
-                    "networkCostAdjustment": {
-                      "type": "number"
-                    },
-                    "cpuCores": {
-                      "type": "number"
-                    },
-                    "pvBytes": {
-                      "type": "number"
-                    },
-                    "cpuEfficiency": {
-                      "type": "number"
-                    },
-                    "rawAllocationOnly": {},
-                    "name": {
-                      "type": "string"
-                    },
-                    "cpuCoreRequestAverage": {
-                      "type": "number"
-                    },
-                    "networkReceiveBytes": {
-                      "type": "number"
-                    },
-                    "window": {
-                      "type": "object",
-                      "properties": {
-                        "start": {
-                          "type": "string"
-                        },
-                        "end": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "properties": {
-                      "type": "object",
-                      "properties": {
-                        "cluster": {
-                          "type": "string"
-                        },
-                        "namespace": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "totalCost": {
-                      "type": "number"
-                    },
-                    "ramByteRequestAverage": {
-                      "type": "number"
-                    }
-                  }
                 }
-              }
             }
-          },
-          "status": {
-            "type": "string"
-          }
+        },
+        "/allocation": {
+            "get": {
+                "description": "查询 Kubernetes 工作负载的详细成本和资源分配数据，返回 AllocationSetRange 数据结构",
+                "tags": [
+                    "Allocation"
+                ],
+                "summary": "查询成本分配数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件，使用声明式表达式语法",
+                        "name": "filter",
+                        "in": "query",
+                        "x-example": "namespace:\"kube-system\""
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prometheus 查询分辨率，默认 1m",
+                        "name": "resolution",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回集合的步长，默认等于 window",
+                        "name": "step",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度，如 namespace, pod, label:app 等，逗号分隔支持多维度",
+                        "name": "aggregate",
+                        "in": "query",
+                        "x-example": "namespace"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否包含空闲成本",
+                        "name": "includeIdle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "按节点级别计算空闲成本",
+                        "name": "idleByNode",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否累加所有集合",
+                        "name": "accumulate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "累加选项: none, all, hour, day, week",
+                        "name": "accumulateBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "包含比例资产资源成本",
+                        "name": "includeProportionalAssetResourceCosts",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否共享空闲成本",
+                        "name": "shareIdle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "包含聚合的 label/annotation",
+                        "name": "includeAggregatedMetadata",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 AllocationSetRange 数据结构，包含成本分配详情",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/allocation/summary": {
+            "get": {
+                "description": "查询 Kubernetes 工作负载的成本和资源分配摘要信息，返回 SummaryAllocationSetRange 数据结构",
+                "tags": [
+                    "Allocation"
+                ],
+                "summary": "查询成本分配摘要数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件，使用声明式表达式语法",
+                        "name": "filter",
+                        "in": "query",
+                        "x-example": "namespace:\"kube-system\""
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prometheus 查询分辨率，默认 1m",
+                        "name": "resolution",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回集合的步长，默认等于 window",
+                        "name": "step",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度，如 namespace, pod, label:app 等",
+                        "name": "aggregate",
+                        "in": "query",
+                        "x-example": "namespace"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否包含空闲成本",
+                        "name": "includeIdle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "按节点级别计算空闲成本",
+                        "name": "idleByNode",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否累加所有集合",
+                        "name": "accumulate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "累加选项: none, all, hour, day, week",
+                        "name": "accumulateBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "包含比例资产资源成本",
+                        "name": "includeProportionalAssetResourceCosts",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否共享空闲成本",
+                        "name": "shareIdle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "包含聚合的 label/annotation",
+                        "name": "includeAggregatedMetadata",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 SummaryAllocationSetRange 数据结构，包含成本分配摘要",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/assets": {
+            "get": {
+                "description": "查询集群中的资产数据（节点、磁盘、负载均衡器等），返回 AssetSet 数据结构",
+                "tags": [
+                    "Asset"
+                ],
+                "summary": "查询资产数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口，如 today, week, 7d 或 RFC3339 范围",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件",
+                        "name": "filter",
+                        "in": "query",
+                        "x-example": "namespace:\"kube-system\""
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 AssetSet 数据结构，包含集群资产详细信息",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/assets/carbon": {
+            "get": {
+                "description": "查询集群资产的碳足迹估算数据，返回碳排放量信息。该路由仅在启用 Carbon Estimates 时注册，未启用时部署实例可能返回 404。",
+                "tags": [
+                    "Asset"
+                ],
+                "summary": "查询资产碳排放数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件",
+                        "name": "filter",
+                        "in": "query",
+                        "x-example": "namespace:\"kube-system\""
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回碳排放估算数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloud/config/delete": {
+            "get": {
+                "description": "删除指定的云提供商配置",
+                "tags": [
+                    "CloudConfig"
+                ],
+                "summary": "删除云配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "配置键",
+                        "name": "key",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "your-service-account-key"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回配置删除结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloud/config/disable": {
+            "get": {
+                "description": "禁用指定的云提供商配置",
+                "tags": [
+                    "CloudConfig"
+                ],
+                "summary": "禁用云配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "配置键",
+                        "name": "key",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "your-service-account-key"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回配置禁用结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloud/config/enable": {
+            "get": {
+                "description": "启用指定的云提供商配置",
+                "tags": [
+                    "CloudConfig"
+                ],
+                "summary": "启用云配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "配置键",
+                        "name": "key",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "your-service-account-key"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回配置启用结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloud/config/export": {
+            "get": {
+                "description": "导出当前云提供商配置",
+                "tags": [
+                    "CloudConfig"
+                ],
+                "summary": "导出云配置",
+                "responses": {
+                    "200": {
+                        "description": "返回当前云配置",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloudCost": {
+            "get": {
+                "description": "查询云提供商账单成本数据",
+                "tags": [
+                    "CloudCost"
+                ],
+                "summary": "查询云成本数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度",
+                        "name": "aggregate",
+                        "in": "query",
+                        "x-example": "namespace"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件",
+                        "name": "filter",
+                        "in": "query",
+                        "x-example": "namespace:\"kube-system\""
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回云成本数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloudCost/rebuild": {
+            "get": {
+                "description": "触发云成本数据的重新计算",
+                "tags": [
+                    "CloudCost"
+                ],
+                "summary": "重建云成本数据",
+                "responses": {
+                    "200": {
+                        "description": "返回数据重建结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloudCost/repair": {
+            "get": {
+                "description": "修复已检测到的云成本数据一致性问题",
+                "tags": [
+                    "CloudCost"
+                ],
+                "summary": "修复云成本数据",
+                "responses": {
+                    "200": {
+                        "description": "返回数据修复结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloudCost/status": {
+            "get": {
+                "description": "获取云成本数据处理管道的当前状态",
+                "tags": [
+                    "CloudCost"
+                ],
+                "summary": "查询云成本管道状态",
+                "responses": {
+                    "200": {
+                        "description": "返回云成本管道状态信息",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloudCost/view/graph": {
+            "get": {
+                "description": "获取图表展示用的云成本聚合数据",
+                "tags": [
+                    "CloudCost"
+                ],
+                "summary": "查询云成本图形视图",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "x-example": "1d"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回云成本图形视图数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloudCost/view/table": {
+            "get": {
+                "description": "获取表格展示用的详细云成本数据",
+                "tags": [
+                    "CloudCost"
+                ],
+                "summary": "查询云成本表格数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "x-example": "1d"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回云成本表格数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/cloudCost/view/totals": {
+            "get": {
+                "description": "获取云成本总计和分类汇总数据",
+                "tags": [
+                    "CloudCost"
+                ],
+                "summary": "查询云成本总计",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "x-example": "1d"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回云成本总计数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/clusterCosts": {
+            "get": {
+                "description": "查询指定时间窗口的集群成本汇总数据。当前实现会把缺失或非法参数编码为 HTTP 200 的错误响应体，而不是返回 HTTP 400。",
+                "tags": [
+                    "Cluster"
+                ],
+                "summary": "查询集群成本",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否使用 Thanos",
+                        "name": "multi",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回集群成本汇总数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/clusterCostsFromCache": {
+            "get": {
+                "description": "从缓存中获取 24 小时集群成本数据",
+                "tags": [
+                    "Cluster"
+                ],
+                "summary": "从缓存查询集群成本",
+                "responses": {
+                    "200": {
+                        "description": "返回缓存的集群成本数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/clusterCostsOverTime": {
+            "get": {
+                "description": "按时间范围查询集群成本的变化趋势数据。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
+                "tags": [
+                    "Cluster"
+                ],
+                "summary": "查询集群成本变化趋势",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "start",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-01T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "end",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-07T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回集群成本时间序列数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/clusterInfo": {
+            "get": {
+                "description": "获取当前集群的基本信息和配置",
+                "tags": [
+                    "Cluster"
+                ],
+                "summary": "查询集群信息",
+                "responses": {
+                    "200": {
+                        "description": "返回集群基本信息和配置",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/clusterInfoMap": {
+            "get": {
+                "description": "获取所有已知集群的信息映射表",
+                "tags": [
+                    "Cluster"
+                ],
+                "summary": "查询集群信息映射",
+                "responses": {
+                    "200": {
+                        "description": "返回所有已知集群的信息映射",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/costDataModel": {
+            "get": {
+                "description": "查询指定时间窗口内的成本数据模型。当前实现允许省略 timeWindow，但结果依赖后端默认处理逻辑。",
+                "tags": [
+                    "Cost Model"
+                ],
+                "summary": "查询成本数据模型",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口；当前实现允许省略，但建议显式提供",
+                        "name": "timeWindow",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤字段列表",
+                        "name": "filterFields",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "命名空间过滤",
+                        "name": "namespace",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回成本数据模型原始数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/costDataModelRange": {
+            "get": {
+                "description": "查询指定时间范围内的成本数据模型。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
+                "tags": [
+                    "Cost Model"
+                ],
+                "summary": "查询成本数据模型（范围）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "start",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-01T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "end",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-07T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "窗口分辨率",
+                        "name": "window",
+                        "in": "query",
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤字段",
+                        "name": "filterFields",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "命名空间",
+                        "name": "namespace",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "集群",
+                        "name": "cluster",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "remote",
+                        "name": "remote",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回指定时间范围的成本数据模型",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/customCost/status": {
+            "get": {
+                "description": "获取自定义成本数据处理管道的当前状态",
+                "tags": [
+                    "CustomCost"
+                ],
+                "summary": "查询自定义成本管道状态",
+                "responses": {
+                    "200": {
+                        "description": "返回自定义成本管道状态",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/customCost/timeseries": {
+            "get": {
+                "description": "查询用户自定义成本数据的时间序列",
+                "tags": [
+                    "CustomCost"
+                ],
+                "summary": "查询自定义成本时间序列",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "指标名称",
+                        "name": "metric",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回自定义成本时间序列",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/customCost/total": {
+            "get": {
+                "description": "查询用户自定义成本数据的总计",
+                "tags": [
+                    "CustomCost"
+                ],
+                "summary": "查询自定义成本总计",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口",
+                        "name": "window",
+                        "in": "query",
+                        "x-example": "1d"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回自定义成本总计",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/customPricing": {
+            "get": {
+                "description": "获取当前云提供商的自定义定价配置数据",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询自定义定价配置",
+                "responses": {
+                    "200": {
+                        "description": "返回自定义定价配置",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/diagnostics/prometheusMetrics": {
+            "get": {
+                "description": "获取 Prometheus 和 Thanos 的诊断可用性指标",
+                "tags": [
+                    "Diagnostics"
+                ],
+                "summary": "查询 Prometheus 诊断指标",
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus/Thanos 诊断指标",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/diagnostics/requestQueue": {
+            "get": {
+                "description": "获取 Prometheus 和 Thanos 请求队列的当前状态",
+                "tags": [
+                    "Diagnostics"
+                ],
+                "summary": "查询 Prometheus 请求队列状态",
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus/Thanos 请求队列状态",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/healthz": {
+            "get": {
+                "description": "服务健康探针，返回 HTTP 200 表示健康",
+                "tags": [
+                    "System"
+                ],
+                "summary": "健康检查",
+                "responses": {
+                    "200": {
+                        "description": "空响应，状态码表示服务健康"
+                    }
+                }
+            }
+        },
+        "/helmValues": {
+            "get": {
+                "description": "获取部署时使用的 Helm values 配置",
+                "tags": [
+                    "Configuration"
+                ],
+                "summary": "查询 Helm 配置值",
+                "responses": {
+                    "200": {
+                        "description": "返回 Helm 配置值",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/installInfo": {
+            "get": {
+                "description": "获取 OpenCost 的安装信息，包括容器信息和版本",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询安装信息",
+                "responses": {
+                    "200": {
+                        "description": "返回安装信息（容器、版本等）",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.InstallInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/installNamespace": {
+            "get": {
+                "description": "获取 OpenCost 安装的 Kubernetes 命名空间",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询安装命名空间",
+                "responses": {
+                    "200": {
+                        "description": "返回命名空间名称字符串",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/logs/level": {
+            "get": {
+                "description": "获取当前服务的 zerolog 日志级别",
+                "tags": [
+                    "System"
+                ],
+                "summary": "获取日志级别",
+                "responses": {
+                    "200": {
+                        "description": "返回当前日志级别（GET）或设置结果（POST）",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_cmd_costmodel.LogLevelRequestResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "设置当前服务的 zerolog 日志级别",
+                "tags": [
+                    "System"
+                ],
+                "summary": "设置日志级别",
+                "parameters": [
+                    {
+                        "description": "日志级别配置",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/pkg_cmd_costmodel.LogLevelRequestResponse"
+                        },
+                        "x-example": "{\"level\":\"info\"}"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回当前日志级别（GET）或设置结果（POST）"
+                    },
+                    "400": {
+                        "description": "无效的日志级别",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/managementPlatform": {
+            "get": {
+                "description": "获取当前集群所属的管理平台信息",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询管理平台信息",
+                "responses": {
+                    "200": {
+                        "description": "返回管理平台信息",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/orphanedPods": {
+            "get": {
+                "description": "获取集群中没有 OwnerReference 的孤立 Pod 列表",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询孤立 Pod",
+                "responses": {
+                    "200": {
+                        "description": "返回孤立 Pod 列表",
+                        "schema": {}
+                    }
+                }
+            }
+        },
+        "/pricingSourceCounts": {
+            "get": {
+                "description": "获取各定价数据源的数量统计",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询定价源计数",
+                "responses": {
+                    "200": {
+                        "description": "返回定价数据源数量统计",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/pricingSourceStatus": {
+            "get": {
+                "description": "获取云提供商定价数据源的当前状态",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询定价源状态",
+                "responses": {
+                    "200": {
+                        "description": "返回定价数据源状态",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/pricingSourceSummary": {
+            "get": {
+                "description": "获取定价数据源的摘要信息",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询定价源摘要",
+                "responses": {
+                    "200": {
+                        "description": "返回定价数据源摘要",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/prometheusConfig": {
+            "get": {
+                "description": "获取 Prometheus 服务端点地址等配置信息",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus 配置信息",
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus 配置信息",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/prometheusQuery": {
+            "get": {
+                "description": "代理执行 Prometheus 即时查询，返回原生查询结果。当前实现对缺失 query 参数返回 HTTP 200 错误响应体；仅非法 time 格式返回 HTTP 400。",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus 即时查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "sum(kube_pod_info)"
+                    },
+                    {
+                        "type": "string",
+                        "description": "查询时间点，Unix 时间戳或 RFC3339",
+                        "name": "time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus 即时查询原始结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/pkg_costmodel.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/prometheusQueryRange": {
+            "get": {
+                "description": "代理执行 Prometheus 范围查询，返回时间序列数据。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus 范围查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "sum(kube_pod_info)"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "start",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-01T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "end",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-07T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "步长，Go duration 格式，例如 300s",
+                        "name": "duration",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "3600s"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus 范围查询时间序列数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/prometheusRecordingRules": {
+            "get": {
+                "description": "代理获取 Prometheus 的 recording rules 配置",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus Recording Rules",
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus recording rules 配置",
+                        "schema": {}
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/prometheusTargets": {
+            "get": {
+                "description": "代理获取 Prometheus 的目标端点列表",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus Targets",
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus 目标端点列表",
+                        "schema": {}
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/refreshPricing": {
+            "post": {
+                "description": "当新节点加入集群时刷新云提供商定价数据缓存",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "刷新定价数据",
+                "responses": {
+                    "200": {
+                        "description": "返回定价数据刷新结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/serviceAccountStatus": {
+            "get": {
+                "description": "获取云提供商服务账号的当前状态",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询服务账号状态",
+                "responses": {
+                    "200": {
+                        "description": "返回服务账号状态信息",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/serviceKey": {
+            "post": {
+                "description": "将云提供商服务密钥写入配置文件。当前实现即使未提供 key 也会返回 HTTP 200。",
+                "tags": [
+                    "Configuration"
+                ],
+                "summary": "添加服务密钥",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务密钥；当前实现未强制校验",
+                        "name": "key",
+                        "in": "formData",
+                        "x-example": "your-service-account-key"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回服务密钥写入结果"
+                    },
+                    "500": {
+                        "description": "Error writing service key",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "获取 OpenCost 服务状态和 Prometheus 连接信息",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询服务状态",
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus 连接信息",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/thanosQuery": {
+            "get": {
+                "description": "代理执行 Thanos 即时查询（需启用 Thanos）。若未启用 Thanos，当前实现返回 HTTP 200 错误响应体；仅非法 time 格式返回 HTTP 400。",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Thanos 即时查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "sum(kube_pod_info)"
+                    },
+                    {
+                        "type": "string",
+                        "description": "查询时间点",
+                        "name": "time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 Thanos 即时查询原始结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/pkg_costmodel.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/thanosQueryRange": {
+            "get": {
+                "description": "代理执行 Thanos 范围查询（需启用 Thanos）。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Thanos 范围查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "sum(kube_pod_info)"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "start",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-01T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "end",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "2026-05-07T00:00:00.000Z"
+                    },
+                    {
+                        "type": "string",
+                        "description": "步长，Go duration 格式，例如 300s",
+                        "name": "duration",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "3600s"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 Thanos 范围查询时间序列数据",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/validatePrometheus": {
+            "get": {
+                "description": "验证与 Prometheus 的连接状态并返回元数据",
+                "tags": [
+                    "Diagnostics"
+                ],
+                "summary": "验证 Prometheus 连接",
+                "responses": {
+                    "200": {
+                        "description": "返回 Prometheus 连接验证结果",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
         }
-      }
+    },
+    "definitions": {
+        "pkg_cmd_costmodel.LogLevelRequestResponse": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_costmodel.ContainerInfo": {
+            "type": "object",
+            "properties": {
+                "containerName": {
+                    "type": "string"
+                },
+                "image": {
+                    "type": "string"
+                },
+                "startTime": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_costmodel.InstallInfo": {
+            "type": "object",
+            "properties": {
+                "clusterInfo": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "containers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pkg_costmodel.ContainerInfo"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "pkg_costmodel.Response": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "warning": {
+                    "type": "string"
+                }
+            }
+        }
     }
-  }
 }

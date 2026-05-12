@@ -14,7 +14,16 @@ import (
 	"github.com/opencost/opencost/pkg/env"
 )
 
-// ComputeAllocationHandler returns the assets from the CostModel.
+// ComputeAssetsHandler returns the assets from the CostModel.
+// @Summary      查询资产数据
+// @Tags         Asset
+// @Description  查询集群中的资产数据（节点、磁盘、负载均衡器等），返回 AssetSet 数据结构
+// @Param        window    query  string  true   "时间窗口，如 today, week, 7d 或 RFC3339 范围"
+// @Param        filter    query  string  false  "过滤条件"
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/assets [get]
 func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -39,7 +48,16 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 	w.Write(WrapData(assetSet, nil))
 }
 
-// ComputeAllocationHandler returns the assets from the CostModel.
+// ComputeAssetsCarbonHandler returns carbon estimates for assets.
+// @Summary      查询资产碳排放数据
+// @Tags         Asset
+// @Description  查询集群资产的碳足迹估算数据，返回碳排放量信息。该路由仅在启用 Carbon Estimates 时注册，未启用时部署实例可能返回 404。
+// @Param        window    query  string  true   "时间窗口"
+// @Param        filter    query  string  false  "过滤条件"
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/assets/carbon [get]
 func (a *Accesses) ComputeAssetsCarbonHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 

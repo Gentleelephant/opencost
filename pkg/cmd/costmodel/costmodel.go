@@ -29,6 +29,12 @@ type CostModelOpts struct {
 	// Stubbed for future configuration
 }
 
+// Healthz
+// @Summary      健康检查
+// @Tags         System
+// @Description  服务健康探针，返回 HTTP 200 表示健康
+// @Success      200  "服务健康"
+// @Router       /healthz [get]
 func Healthz(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	w.WriteHeader(200)
 	w.Header().Set("Content-Length", "0")
@@ -50,11 +56,11 @@ func Execute(opts *CostModelOpts) error {
 		}
 
 		// Register OpenCost Specific Endpoints
-		router.GET("/allocation", a.ComputeAllocationHandler)
-		router.GET("/allocation/summary", a.ComputeAllocationHandlerSummary)
-		router.GET("/assets", a.ComputeAssetsHandler)
+		router.GET(costmodel.RoutePrefix+"/allocation", a.ComputeAllocationHandler)
+		router.GET(costmodel.RoutePrefix+"/allocation/summary", a.ComputeAllocationHandlerSummary)
+		router.GET(costmodel.RoutePrefix+"/assets", a.ComputeAssetsHandler)
 		if env.IsCarbonEstimatesEnabled() {
-			router.GET("/assets/carbon", a.ComputeAssetsCarbonHandler)
+			router.GET(costmodel.RoutePrefix+"/assets/carbon", a.ComputeAssetsCarbonHandler)
 		}
 
 		// set cloud provider for cloud cost
@@ -78,7 +84,7 @@ func Execute(opts *CostModelOpts) error {
 
 	// this endpoint is intentionally left out of the "if env.IsCustomCostEnabled()" conditional; in the handler, it is
 	// valid for CustomCostPipelineService to be nil
-	router.GET("/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
+	router.GET(costmodel.RoutePrefix+"/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
 
 	router.GET("/healthz", Healthz)
 
@@ -143,6 +149,13 @@ type LogLevelRequestResponse struct {
 	Level string `json:"level"`
 }
 
+// GetLogLevel
+// @Summary      获取日志级别
+// @Tags         System
+// @Description  获取当前服务的 zerolog 日志级别
+// @Success      200  {object}  costmodel.LogLevelRequestResponse
+// @Failure      500  {string}  string
+// @Router       /logs/level [get]
 func GetLogLevel(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -164,6 +177,14 @@ func GetLogLevel(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	}
 }
 
+// SetLogLevel
+// @Summary      设置日志级别
+// @Tags         System
+// @Description  设置当前服务的 zerolog 日志级别
+// @Param        body  body  costmodel.LogLevelRequestResponse  true  "日志级别配置"
+// @Success      200  "设置成功"
+// @Failure      400  {string}  string  "无效的日志级别"
+// @Router       /logs/level [post]
 func SetLogLevel(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	params := LogLevelRequestResponse{}
 	err := json.NewDecoder(r.Body).Decode(&params)

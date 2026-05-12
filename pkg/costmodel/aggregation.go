@@ -1900,8 +1900,18 @@ var (
 	percentRegex = regexp.MustCompile(`(\d+\.*\d*)%`)
 )
 
-// AggregateCostModelHandler handles requests to the aggregated cost model API. See
-// ComputeAggregateCostModel for details.
+// AggregateCostModelHandler handles requests to the aggregated cost model API.
+// @Summary      聚合成本模型查询
+// @Tags         Cost Model
+// @Description  查询聚合后的成本模型数据，支持按窗口、聚合维度等参数筛选
+// @Param        window      query  string  true   "时间窗口"
+// @Param        offset      query  string  false  "偏移量"
+// @Param        aggregation query  string  false  "聚合维度"
+// @Param        filterType  query  string  false  "过滤类型"
+// @Param        filterValue query  string  false  "过滤值"
+// @Success      200  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/aggregatedCostModel [get]
 func (a *Accesses) AggregateCostModelHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -2146,6 +2156,26 @@ func ParseAggregationProperties(aggregations []string) ([]string, error) {
 	return aggregateBy, nil
 }
 
+// ComputeAllocationHandlerSummary
+// @Summary      查询成本分配摘要数据
+// @Tags         Allocation
+// @Description  查询 Kubernetes 工作负载的成本和资源分配摘要信息，返回 SummaryAllocationSetRange 数据结构
+// @Param        window                         query  string  true   "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围"
+// @Param        filter                         query  string  false  "过滤条件，使用声明式表达式语法"
+// @Param        resolution                     query  string  false  "Prometheus 查询分辨率，默认 1m"
+// @Param        step                           query  string  false  "返回集合的步长，默认等于 window"
+// @Param        aggregate                      query  string  false  "聚合维度，如 namespace, pod, label:app 等"
+// @Param        includeIdle                    query  bool    false  "是否包含空闲成本"
+// @Param        idleByNode                     query  bool    false  "按节点级别计算空闲成本"
+// @Param        accumulate                     query  bool    false  "是否累加所有集合"
+// @Param        accumulateBy                   query  string  false  "累加选项: none, all, hour, day, week"
+// @Param        includeProportionalAssetResourceCosts  query  bool  false  "包含比例资产资源成本"
+// @Param        shareIdle                      query  bool    false  "是否共享空闲成本"
+// @Param        includeAggregatedMetadata      query  bool    false  "包含聚合的 label/annotation"
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/allocation/summary [get]
 func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -2252,7 +2282,26 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	w.Write(WrapData(sasr, nil))
 }
 
-// ComputeAllocationHandler computes an AllocationSetRange from the CostModel.
+// ComputeAllocationHandler
+// @Summary      查询成本分配数据
+// @Tags         Allocation
+// @Description  查询 Kubernetes 工作负载的详细成本和资源分配数据，返回 AllocationSetRange 数据结构
+// @Param        window                                  query  string  true   "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围"
+// @Param        filter                                  query  string  false  "过滤条件，使用声明式表达式语法"
+// @Param        resolution                              query  string  false  "Prometheus 查询分辨率，默认 1m"
+// @Param        step                                    query  string  false  "返回集合的步长，默认等于 window"
+// @Param        aggregate                               query  string  false  "聚合维度，如 namespace, pod, label:app 等，逗号分隔支持多维度"
+// @Param        includeIdle                             query  bool    false  "是否包含空闲成本"
+// @Param        idleByNode                              query  bool    false  "按节点级别计算空闲成本"
+// @Param        accumulate                              query  bool    false  "是否累加所有集合"
+// @Param        accumulateBy                            query  string  false  "累加选项: none, all, hour, day, week"
+// @Param        includeProportionalAssetResourceCosts   query  bool    false  "包含比例资产资源成本"
+// @Param        shareIdle                               query  bool    false  "是否共享空闲成本"
+// @Param        includeAggregatedMetadata               query  bool    false  "包含聚合的 label/annotation"
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/allocation [get]
 func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 
