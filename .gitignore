@@ -19,3 +19,9 @@ pkg/cloud/oracle/cloud-integration.json
 
 # tilt
 tilt_config.json
+
+# local tool caches and artifacts
+.gocache/
+.playwright-mcp/
+.zread/
+screenshots/

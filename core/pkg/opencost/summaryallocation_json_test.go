@@ -127,3 +127,60 @@ func TestSummaryAllocationSetRangeResponse_MarshalJSON(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestSummaryAllocationSetRangeResponse_IncludesTotalCostWithoutChangingExistingFields(t *testing.T) {
+	start := time.Date(2026, time.May, 7, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	sa := &SummaryAllocation{
+		Name:                   "cluster-one",
+		Start:                  start,
+		End:                    end,
+		CPUCoreRequestAverage:  3.0,
+		CPUCoreUsageAverage:    1.5,
+		CPUCost:                10.0,
+		CPUCostIdle:            2.0,
+		GPUCost:                0.0,
+		GPUCostIdle:            0.0,
+		NetworkCost:            1.0,
+		LoadBalancerCost:       2.0,
+		PVCost:                 3.0,
+		RAMBytesRequestAverage: 8.0,
+		RAMBytesUsageAverage:   4.0,
+		RAMCost:                5.0,
+		RAMCostIdle:            1.0,
+		SharedCost:             6.0,
+		ExternalCost:           7.0,
+	}
+
+	sas := &SummaryAllocationSet{
+		SummaryAllocations: map[string]*SummaryAllocation{
+			sa.Name: sa,
+		},
+		Window: NewWindow(&start, &end),
+	}
+	sasr := NewSummaryAllocationSetRange(sas)
+	response := sasr.ToResponse()
+
+	got := response.SummaryAllocationSets[0].SummaryAllocations[sa.Name]
+	if got == nil {
+		t.Fatalf("expected summary allocation response for %s", sa.Name)
+	}
+
+	if got.CPUCost == nil || *got.CPUCost != sa.CPUCost {
+		t.Fatalf("expected cpuCost %f, got %#v", sa.CPUCost, got.CPUCost)
+	}
+
+	if got.RAMCost == nil || *got.RAMCost != sa.RAMCost {
+		t.Fatalf("expected ramCost %f, got %#v", sa.RAMCost, got.RAMCost)
+	}
+
+	if got.TotalCost == nil {
+		t.Fatalf("expected totalCost to be present")
+	}
+
+	expectedTotalCost := sa.TotalCost()
+	if *got.TotalCost != expectedTotalCost {
+		t.Fatalf("expected totalCost %f, got %f", expectedTotalCost, *got.TotalCost)
+	}
+}

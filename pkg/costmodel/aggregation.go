@@ -2279,7 +2279,102 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	}
 	sasr := opencost.NewSummaryAllocationSetRange(sasl...)
 
-	w.Write(WrapData(sasr, nil))
+	w.Write(WrapData(sasr.ToResponse(), nil))
+}
+
+func buildSummaryAllocationFilter(filterString string) (opencost.AllocationMatcher, error) {
+	if filterString == "" {
+		return &matcher.AllPass[*opencost.Allocation]{}, nil
+	}
+
+	parser := allocationfilter.NewAllocationFilterParser()
+	tree, err := parser.Parse(filterString)
+	if err != nil {
+		return nil, fmt.Errorf("err parsing filter '%s': %v", ast.ToPreOrderShortString(tree), err)
+	}
+
+	compiler := opencost.NewAllocationMatchCompiler(nil)
+	filter, err := compiler.Compile(tree)
+	if err != nil {
+		return nil, fmt.Errorf("err compiling filter '%s': %v", ast.ToPreOrderShortString(tree), err)
+	}
+	if filter == nil {
+		return nil, fmt.Errorf("unexpected nil filter")
+	}
+
+	return filter, nil
+}
+
+// ComputeAllocationHandlerClusterEfficiencySummary
+// @Summary      查询集群效率摘要数据
+// @Tags         Allocation
+// @Description  查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率
+// @Param        window      query  string  true   "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围"
+// @Param        filter      query  string  false  "过滤条件，使用声明式表达式语法"
+// @Param        resolution  query  string  false  "Prometheus 查询分辨率，默认 1m"
+// @Param        step        query  string  false  "返回集合的步长，默认等于 window"
+// @Param        accumulate  query  bool    false  "是否累加所有集合"
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters/summary [get]
+func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+
+	qp := httputil.NewQueryParams(r.URL.Query())
+
+	window, err := opencost.ParseWindowWithOffset(qp.Get("window", ""), env.GetParsedUTCOffset())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'window' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	step := qp.GetDuration("step", window.Duration())
+	resolution := qp.GetDuration("resolution", env.GetETLResolution())
+	accumulate := qp.GetBool("accumulate", false)
+
+	asr := opencost.NewAllocationSetRange()
+	stepStart := *window.Start()
+	for window.End().After(stepStart) {
+		stepEnd := stepStart.Add(step)
+		stepWindow := opencost.NewWindow(&stepStart, &stepEnd)
+
+		as, err := a.Model.ComputeAllocation(*stepWindow.Start(), *stepWindow.End(), resolution)
+		if err != nil {
+			WriteError(w, InternalServerError(err.Error()))
+			return
+		}
+		asr.Append(as)
+
+		stepStart = stepEnd
+	}
+
+	if accumulate {
+		asr, err = asr.Accumulate(opencost.AccumulateOptionAll)
+		if err != nil {
+			WriteError(w, InternalServerError(err.Error()))
+			return
+		}
+	}
+
+	filter, err := buildSummaryAllocationFilter(qp.Get("filter", ""))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	sasl := make([]*opencost.SummaryAllocationSet, 0, len(asr.Slice()))
+	for _, as := range asr.Slice() {
+		sas := opencost.NewSummaryAllocationSet(as, filter, nil, false, false)
+		if err := sas.AggregateBy([]string{opencost.AllocationClusterProp}, nil); err != nil {
+			WriteError(w, InternalServerError(err.Error()))
+			return
+		}
+		sasl = append(sasl, sas)
+	}
+
+	sasr := opencost.NewSummaryAllocationSetRange(sasl...)
+	w.Write(WrapData(sasr.ClusterEfficiencySetRange(), nil))
 }
 
 // ComputeAllocationHandler

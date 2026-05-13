@@ -1622,6 +1622,72 @@
                     }
                 }
             }
+        },
+        "/efficiency/clusters/summary": {
+            "get": {
+                "description": "查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率",
+                "tags": [
+                    "Allocation"
+                ],
+                "summary": "查询集群效率摘要数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "7d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件，使用声明式表达式语法",
+                        "name": "filter",
+                        "in": "query",
+                        "x-example": "namespace:\"kube-system\""
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prometheus 查询分辨率，默认 1m",
+                        "name": "resolution",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回集合的步长，默认等于 window",
+                        "name": "step",
+                        "in": "query",
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否累加所有集合",
+                        "name": "accumulate",
+                        "in": "query",
+                        "x-example": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回按集群聚合的效率摘要，包含每个集群的效率、workload idle、infra idle、total idle 以及多集群统一效率",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
