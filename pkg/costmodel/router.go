@@ -1644,6 +1644,7 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 	router.GET(RoutePrefix+"/aggregatedCostModel", a.AggregateCostModelHandler)
 	router.GET(RoutePrefix+"/allocation/compute", a.ComputeAllocationHandler)
 	router.GET(RoutePrefix+"/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
+	router.GET(RoutePrefix+"/efficiency/clusters", a.ComputeAllocationHandlerClusterEfficiencySummary)
 	router.GET(RoutePrefix+"/efficiency/clusters/summary", a.ComputeAllocationHandlerClusterEfficiencySummary)
 	router.GET(RoutePrefix+"/allNodePricing", a.GetAllNodePricing)
 	router.GET(RoutePrefix+"/customPricing", a.GetCustomPricing)

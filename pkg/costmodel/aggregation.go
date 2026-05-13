@@ -2306,17 +2306,20 @@ func buildSummaryAllocationFilter(filterString string) (opencost.AllocationMatch
 }
 
 // ComputeAllocationHandlerClusterEfficiencySummary
-// @Summary      查询集群效率摘要数据
+// @Summary      查询集群效率摘要数据 + 每资源类型 allocation/usage/idle 拆分
 // @Tags         Allocation
-// @Description  查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率
+// @Description  查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。
+// @Description  同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。
+// @Description  支持 filter 参数按集群过滤：`filter=cluster:"c1","c2"` 只返回指定集群。
 // @Param        window      query  string  true   "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围"
-// @Param        filter      query  string  false  "过滤条件，使用声明式表达式语法"
+// @Param        filter      query  string  false  "过滤条件，如 cluster:\"c1\" 只返回指定集群；支持逗号分隔多个"
 // @Param        resolution  query  string  false  "Prometheus 查询分辨率，默认 1m"
 // @Param        step        query  string  false  "返回集合的步长，默认等于 window"
 // @Param        accumulate  query  bool    false  "是否累加所有集合"
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters [get]
 // @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters/summary [get]
 func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
