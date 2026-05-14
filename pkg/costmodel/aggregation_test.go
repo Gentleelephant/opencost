@@ -220,6 +220,43 @@ func TestParseAggregationProperties_Default(t *testing.T) {
 	}
 }
 
+func TestNormalizeAllocationFilterString_ImplicitAnd(t *testing.T) {
+	input := `cluster:"host"   namespace:"default"`
+	expected := `cluster:"host" + namespace:"default"`
+
+	got := normalizeAllocationFilterString(input)
+	if got != expected {
+		t.Fatalf("expected normalized filter %q, got %q", expected, got)
+	}
+}
+
+func TestBuildAllocationFilter_ImplicitAndMatchesBothClauses(t *testing.T) {
+	filter, err := buildAllocationFilter(`cluster:"host" namespace:"default"`)
+	if err != nil {
+		t.Fatalf("unexpected error building filter: %v", err)
+	}
+
+	matching := &opencost.Allocation{
+		Properties: &opencost.AllocationProperties{
+			Cluster:   "host",
+			Namespace: "default",
+		},
+	}
+	if !filter.Matches(matching) {
+		t.Fatalf("expected filter to match allocation with cluster=host and namespace=default")
+	}
+
+	nonMatching := &opencost.Allocation{
+		Properties: &opencost.AllocationProperties{
+			Cluster:   "host",
+			Namespace: "kube-system",
+		},
+	}
+	if filter.Matches(nonMatching) {
+		t.Fatalf("expected filter not to match allocation with namespace=kube-system")
+	}
+}
+
 func TestParseAggregationProperties_All(t *testing.T) {
 	got, err := ParseAggregationProperties([]string{"all"})
 

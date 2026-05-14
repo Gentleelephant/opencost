@@ -557,6 +557,9 @@ func (dfp *defaultFilterParser) Parse(filter string) (FilterNode, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing filter: %w", err)
 	}
+	if !p.atEnd() {
+		return nil, fmt.Errorf("parsing filter: %w", parseError(p.peek(), "unexpected trailing tokens"))
+	}
 
 	return parsedFilter, nil
 }

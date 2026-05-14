@@ -2248,28 +2248,10 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	}
 
 	filterString := qp.Get("filter", "")
-	var filter opencost.AllocationMatcher
-	if filterString == "" {
-		filter = &matcher.AllPass[*opencost.Allocation]{}
-	} else {
-		parser := allocationfilter.NewAllocationFilterParser()
-		tree, errParse := parser.Parse(filterString)
-		if errParse != nil {
-			err := fmt.Errorf("err parsing filter '%s': %v", ast.ToPreOrderShortString(tree), errParse)
-			http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
-		}
-		// todo: labelconfig?
-		compiler := opencost.NewAllocationMatchCompiler(nil)
-		var err error
-		filter, err = compiler.Compile(tree)
-		if err != nil {
-			err := fmt.Errorf("err compiling filter '%s': %v", ast.ToPreOrderShortString(tree), err)
-			http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
-		}
-	}
-	if filter == nil {
-		err := fmt.Errorf("unexpected nil filter")
+	filter, err := buildAllocationFilter(filterString)
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
+		return
 	}
 
 	sasl := []*opencost.SummaryAllocationSet{}
@@ -2283,9 +2265,15 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 }
 
 func buildSummaryAllocationFilter(filterString string) (opencost.AllocationMatcher, error) {
+	return buildAllocationFilter(filterString)
+}
+
+func buildAllocationFilter(filterString string) (opencost.AllocationMatcher, error) {
 	if filterString == "" {
 		return &matcher.AllPass[*opencost.Allocation]{}, nil
 	}
+
+	filterString = normalizeAllocationFilterString(filterString)
 
 	parser := allocationfilter.NewAllocationFilterParser()
 	tree, err := parser.Parse(filterString)
@@ -2303,6 +2291,75 @@ func buildSummaryAllocationFilter(filterString string) (opencost.AllocationMatch
 	}
 
 	return filter, nil
+}
+
+func normalizeAllocationFilterString(filter string) string {
+	var builder strings.Builder
+	builder.Grow(len(filter) + 8)
+
+	inQuotes := false
+	lastSig := byte(0)
+
+	for i := 0; i < len(filter); {
+		ch := filter[i]
+
+		if ch == '"' {
+			inQuotes = !inQuotes
+			builder.WriteByte(ch)
+			lastSig = ch
+			i++
+			continue
+		}
+
+		if inQuotes {
+			builder.WriteByte(ch)
+			lastSig = ch
+			i++
+			continue
+		}
+
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+			j := i + 1
+			for j < len(filter) {
+				next := filter[j]
+				if next != ' ' && next != '\t' && next != '\n' && next != '\r' {
+					break
+				}
+				j++
+			}
+
+			var nextSig byte
+			if j < len(filter) {
+				nextSig = filter[j]
+			}
+
+			if isImplicitAllocationAndBoundary(lastSig, nextSig) {
+				builder.WriteString(" + ")
+				lastSig = '+'
+			}
+
+			i = j
+			continue
+		}
+
+		builder.WriteByte(ch)
+		lastSig = ch
+		i++
+	}
+
+	return builder.String()
+}
+
+func isImplicitAllocationAndBoundary(prev, next byte) bool {
+	return isAllocationFilterExprEnd(prev) && isAllocationFilterExprStart(next)
+}
+
+func isAllocationFilterExprEnd(ch byte) bool {
+	return ch == '"' || ch == ')'
+}
+
+func isAllocationFilterExprStart(ch byte) bool {
+	return ch == '(' || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
 }
 
 // ComputeAllocationHandlerClusterEfficiencySummary
@@ -2413,28 +2470,10 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	filterString := qp.Get("filter", "")
-	var filter opencost.AllocationMatcher
-	if filterString == "" {
-		filter = &matcher.AllPass[*opencost.Allocation]{}
-	} else {
-		parser := allocationfilter.NewAllocationFilterParser()
-		tree, errParse := parser.Parse(filterString)
-		if errParse != nil {
-			err := fmt.Errorf("err parsing filter '%s': %v", ast.ToPreOrderShortString(tree), errParse)
-			http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
-		}
-		// todo: labelconfig?
-		compiler := opencost.NewAllocationMatchCompiler(nil)
-		var err error
-		filter, err = compiler.Compile(tree)
-		if err != nil {
-			err := fmt.Errorf("err compiling filter '%s': %v", ast.ToPreOrderShortString(tree), err)
-			http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
-		}
-	}
-	if filter == nil {
-		err := fmt.Errorf("unexpected nil filter")
+	filter, err := buildAllocationFilter(filterString)
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
+		return
 	}
 
 	// Resolution is an optional parameter, defaulting to the configured ETL
