@@ -35,8 +35,8 @@ func TestSummaryAllocationClusterEfficiencyMetric(t *testing.T) {
 		if metric.Efficiency != 0.0 {
 			t.Fatalf("expected zero efficiency, got %f", metric.Efficiency)
 		}
-		if metric.UsageCost != 0.0 {
-			t.Fatalf("expected zero usage cost, got %f", metric.UsageCost)
+		if metric.TotalUsageCost != 0.0 {
+			t.Fatalf("expected zero usage cost, got %f", metric.TotalUsageCost)
 		}
 		if metric.WorkloadIdleCost <= 0.0 {
 			t.Fatalf("expected positive workload idle cost, got %f", metric.WorkloadIdleCost)
@@ -154,8 +154,8 @@ func TestSummaryAllocationSetClusterEfficiencySet(t *testing.T) {
 	if !util.IsApproximately(host.RAMEfficiency, 1.0) {
 		t.Fatalf("unexpected host ram efficiency: %f", host.RAMEfficiency)
 	}
-	if !approximatelyWithin(host.UsageCost, 4.084035616675961, 0.001) {
-		t.Fatalf("unexpected host usage cost: %f", host.UsageCost)
+	if !approximatelyWithin(host.TotalUsageCost, 4.084035616675961, 0.001) {
+		t.Fatalf("unexpected host usage cost: %f", host.TotalUsageCost)
 	}
 	if !approximatelyWithin(host.WorkloadIdleCost, 10.39727527324637, 0.001) {
 		t.Fatalf("unexpected host workload idle cost: %f", host.WorkloadIdleCost)
@@ -166,15 +166,15 @@ func TestSummaryAllocationSetClusterEfficiencySet(t *testing.T) {
 	if !approximatelyWithin(host.TotalIdleCost, 27.988812607355278, 0.001) {
 		t.Fatalf("unexpected host total idle cost: %f", host.TotalIdleCost)
 	}
-	if !util.IsApproximately(host.ResourceCost, 32.07273410752205) {
-		t.Fatalf("unexpected host resource cost: %f", host.ResourceCost)
+	if !util.IsApproximately(host.TotalAllocationCost, 32.07273410752205) {
+		t.Fatalf("unexpected host resource cost: %f", host.TotalAllocationCost)
 	}
 	if !approximatelyWithin(host.Efficiency, 0.1273367391788061, 0.0001) {
 		t.Fatalf("unexpected host efficiency: %f", host.Efficiency)
 	}
 
-	if !approximatelyWithin(ces.Summary.UsageCost, 4.084035616675961, 0.001) {
-		t.Fatalf("unexpected total usage cost: %f", ces.Summary.UsageCost)
+	if !approximatelyWithin(ces.Summary.TotalUsageCost, 4.084035616675961, 0.001) {
+		t.Fatalf("unexpected total usage cost: %f", ces.Summary.TotalUsageCost)
 	}
 	if !approximatelyWithin(ces.Summary.WorkloadIdleCost, 13.026485867880915, 0.001) {
 		t.Fatalf("unexpected total workload idle cost: %f", ces.Summary.WorkloadIdleCost)
@@ -185,8 +185,8 @@ func TestSummaryAllocationSetClusterEfficiencySet(t *testing.T) {
 	if !approximatelyWithin(ces.Summary.TotalIdleCost, 41.45649271815634, 0.001) {
 		t.Fatalf("unexpected total idle cost: %f", ces.Summary.TotalIdleCost)
 	}
-	if !util.IsApproximately(ces.Summary.ResourceCost, 45.54041421832311) {
-		t.Fatalf("unexpected total resource cost: %f", ces.Summary.ResourceCost)
+	if !util.IsApproximately(ces.Summary.TotalAllocationCost, 45.54041421832311) {
+		t.Fatalf("unexpected total resource cost: %f", ces.Summary.TotalAllocationCost)
 	}
 	if !approximatelyWithin(ces.Summary.Efficiency, 0.08967936515945769, 0.0001) {
 		t.Fatalf("unexpected total efficiency: %f", ces.Summary.Efficiency)
