@@ -76,6 +76,52 @@ func TestQueryAggregatedAssetSetRangeDayAndFilter(t *testing.T) {
 	}
 }
 
+func TestBuildAssetFilterString_WithClusterOnly(t *testing.T) {
+	got := buildAssetFilterString("", "cluster-a, cluster-b")
+	want := `cluster:"cluster-a","cluster-b"`
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestBuildAssetFilterString_WithClusterAndFilter(t *testing.T) {
+	got := buildAssetFilterString(`assetType:"node"`, "cluster-a")
+	want := `(cluster:"cluster-a") + (assetType:"node")`
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestQueryAggregatedAssetSetRangeFilterByCluster(t *testing.T) {
+	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	asr, err := queryAggregatedAssetSetRange(
+		opencost.NewClosedWindow(start, end),
+		`cluster:"cluster-b"`,
+		"name",
+		opencost.AccumulateOptionDay,
+		mockAssetComputer(map[int64]*opencost.AssetSet{
+			start.Unix(): testAssetSetWithClusters(start, end),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("queryAggregatedAssetSetRange returned error: %v", err)
+	}
+
+	resp := buildAssetAggregateResponse(asr)
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 response entry, got %d", len(resp))
+	}
+
+	entry := resp[0]
+	if len(entry) != 1 {
+		t.Fatalf("expected 1 asset after cluster filter, got %d", len(entry))
+	}
+
+	assertAssetCost(t, entry, "node-b", 7)
+}
+
 func TestBuildAssetGraphResponseSortOffsetAndLimit(t *testing.T) {
 	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
@@ -203,6 +249,18 @@ func testAssetSet(start, end time.Time, nodeCost, diskCost, networkCost float64)
 	network.Cost = networkCost
 
 	return opencost.NewAssetSet(start, end, node, disk, network)
+}
+
+func testAssetSetWithClusters(start, end time.Time) *opencost.AssetSet {
+	window := opencost.NewClosedWindow(start, end)
+
+	nodeA := opencost.NewNode("node-a", "cluster-a", "node-1", start, end, window)
+	nodeA.CPUCost = 10
+
+	nodeB := opencost.NewNode("node-b", "cluster-b", "node-2", start, end, window)
+	nodeB.CPUCost = 7
+
+	return opencost.NewAssetSet(start, end, nodeA, nodeB)
 }
 
 func assertAssetCost(t *testing.T, entry map[string]opencost.Asset, key string, expected float64) {

@@ -325,6 +325,12 @@
                     },
                     {
                         "type": "string",
+                        "description": "按集群过滤资产。支持单个或多个集群，多个集群用英文逗号分隔。该参数会与 filter 做 AND 合并。示例：cluster=prod、cluster=prod,staging",
+                        "name": "cluster",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。常用操作：等于 field:\\",
                         "name": "filter",
                         "in": "query"
@@ -381,6 +387,12 @@
                     },
                     {
                         "type": "string",
+                        "description": "按集群过滤资产。支持单个或多个集群，多个集群用英文逗号分隔。该参数会与 filter 做 AND 合并。示例：cluster=prod、cluster=prod,staging",
+                        "name": "cluster",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "资产过滤条件，语法与 /assets、/assets/graph 保持一致。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。示例：filter=assetType:\\",
                         "name": "filter",
                         "in": "query"
@@ -433,6 +445,12 @@
                         "type": "string",
                         "description": "时间粒度。默认 day。支持：hour、day、week、month。含义：按小时、按天、按周、按月返回图表桶。示例：accumulate=hour 用于 24 小时趋势；accumulate=week 用于周维度报表",
                         "name": "accumulate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按集群过滤资产。支持单个或多个集群，多个集群用英文逗号分隔。该参数会与 filter 做 AND 合并。示例：cluster=prod、cluster=prod,staging",
+                        "name": "cluster",
                         "in": "query"
                     },
                     {

@@ -3,6 +3,7 @@ package costmodel
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	assetfilter "github.com/opencost/opencost/core/pkg/filter/asset"
@@ -52,6 +53,34 @@ func parseAssetMatcher(filterString string) (opencost.AssetMatcher, error) {
 	}
 
 	return filter, nil
+}
+
+func buildAssetFilterString(filterString, clusterString string) string {
+	clusterString = strings.TrimSpace(clusterString)
+	if clusterString == "" {
+		return filterString
+	}
+
+	clusters := strings.Split(clusterString, ",")
+	values := make([]string, 0, len(clusters))
+	for _, cluster := range clusters {
+		cluster = strings.TrimSpace(cluster)
+		if cluster == "" {
+			continue
+		}
+		values = append(values, fmt.Sprintf("%q", cluster))
+	}
+
+	if len(values) == 0 {
+		return filterString
+	}
+
+	clusterFilter := fmt.Sprintf("cluster:%s", strings.Join(values, ","))
+	if strings.TrimSpace(filterString) == "" {
+		return clusterFilter
+	}
+
+	return fmt.Sprintf("(%s) + (%s)", clusterFilter, filterString)
 }
 
 func filterAssetSet(assetSet *opencost.AssetSet, filter opencost.AssetMatcher) *opencost.AssetSet {
