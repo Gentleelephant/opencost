@@ -22,9 +22,10 @@ type AssetGraphResponse struct {
 }
 
 type AssetGraphDataSet struct {
-	Start time.Time        `json:"start"`
-	End   time.Time        `json:"end"`
-	Items []AssetGraphItem `json:"items"`
+	Start     time.Time        `json:"start"`
+	End       time.Time        `json:"end"`
+	TotalCost float64          `json:"totalCost"`
+	Items     []AssetGraphItem `json:"items"`
 }
 
 type AssetGraphItem struct {
@@ -246,6 +247,7 @@ func buildAssetGraphResponse(asr *opencost.AssetSetRange, offset, limit int) *As
 		if assetSet != nil {
 			dataSet.Start = assetSet.Start()
 			dataSet.End = assetSet.End()
+			dataSet.TotalCost = assetSet.TotalCost()
 			items := make([]AssetGraphItem, 0, len(assetSet.Assets))
 			for key, asset := range assetSet.Assets {
 				items = append(items, AssetGraphItem{

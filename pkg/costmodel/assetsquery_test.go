@@ -146,6 +146,9 @@ func TestBuildAssetGraphResponseSortOffsetAndLimit(t *testing.T) {
 	if got := len(graph.Chart[0].Items); got != 1 {
 		t.Fatalf("expected 1 chart item after offset/limit, got %d", got)
 	}
+	if graph.Chart[0].TotalCost != 13 {
+		t.Fatalf("expected total cost 13, got %f", graph.Chart[0].TotalCost)
+	}
 
 	item := graph.Chart[0].Items[0]
 	if item.Name != "Disk" {
