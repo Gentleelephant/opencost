@@ -59,6 +59,7 @@ func Execute(opts *CostModelOpts) error {
 		router.GET(costmodel.RoutePrefix+"/allocation", a.ComputeAllocationHandler)
 		router.GET(costmodel.RoutePrefix+"/allocation/summary", a.ComputeAllocationHandlerSummary)
 		router.GET(costmodel.RoutePrefix+"/assets", a.ComputeAssetsHandler)
+		router.GET(costmodel.RoutePrefix+"/assets/graph", a.ComputeAssetsGraphHandler)
 		if env.IsCarbonEstimatesEnabled() {
 			router.GET(costmodel.RoutePrefix+"/assets/carbon", a.ComputeAssetsCarbonHandler)
 		}
