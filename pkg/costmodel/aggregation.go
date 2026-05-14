@@ -2159,19 +2159,21 @@ func ParseAggregationProperties(aggregations []string) ([]string, error) {
 // ComputeAllocationHandlerSummary
 // @Summary      查询成本分配摘要数据
 // @Tags         Allocation
-// @Description  查询 Kubernetes 工作负载的成本和资源分配摘要信息，返回 SummaryAllocationSetRange 数据结构
-// @Param        window                         query  string  true   "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围"
-// @Param        filter                         query  string  false  "过滤条件，使用声明式表达式语法"
-// @Param        resolution                     query  string  false  "Prometheus 查询分辨率，默认 1m"
-// @Param        step                           query  string  false  "返回集合的步长，默认等于 window"
-// @Param        aggregate                      query  string  false  "聚合维度，如 namespace, pod, label:app 等"
-// @Param        includeIdle                    query  bool    false  "是否包含空闲成本"
-// @Param        idleByNode                     query  bool    false  "按节点级别计算空闲成本"
-// @Param        accumulate                     query  bool    false  "是否累加所有集合"
-// @Param        accumulateBy                   query  string  false  "累加选项: none, all, hour, day, week"
-// @Param        includeProportionalAssetResourceCosts  query  bool  false  "包含比例资产资源成本"
-// @Param        shareIdle                      query  bool    false  "是否共享空闲成本"
-// @Param        includeAggregatedMetadata      query  bool    false  "包含聚合的 label/annotation"
+// @Description  查询 Kubernetes 工作负载的摘要分配数据，返回 SummaryAllocationSetRange。
+// @Description  适合概览卡片、列表页和不需要完整 Allocation 明细的场景。
+// @Description  参数处理顺序为：按 window/resolution/step 生成分配集合，按 aggregate 聚合，按 accumulate 汇总，最后应用 filter。
+// @Param        window                         query  string  true   "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
+// @Param        filter                         query  string  false  "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[<key>]、annotation[<key>]。常用操作：等于 field:\"value\"，不等于 field!:\"value\"，包含 field~:\"value\"，前缀 field<~:\"prefix\"；AND 使用 +，OR 使用 |。示例：filter=cluster:\"prod\"%2Bnamespace:\"default\"、filter=controllerKind:\"deployment\"%2Blabel[app]:\"api\"。注意：URL 中 + 建议编码为 %2B"
+// @Param        resolution                     query  string  false  "Prometheus 查询分辨率。默认 1m。窗口较大时可调大以降低查询压力。示例：resolution=5m、resolution=1h"
+// @Param        step                           query  string  false  "返回集合步长。默认等于整个 window，即默认只返回一个时间片。示例：window=7d&step=1d 表示返回 7 个按天切分的摘要集合"
+// @Param        aggregate                      query  string  false  "聚合维度。支持单个或多个字段，逗号分隔。常用值：namespace、pod、container、cluster、node、controllerKind、controller、label:<key>、annotation:<key>。示例：aggregate=namespace、aggregate=cluster,namespace、aggregate=label:team"
+// @Param        includeIdle                    query  bool    false  "是否包含空闲成本。true 时会把资产侧未分配成本作为 idle 计入结果。示例：includeIdle=true"
+// @Param        idleByNode                     query  bool    false  "是否按节点拆分 idle。默认 false 表示按集群级别计算 idle；true 表示按节点级别计算。仅在 includeIdle=true 时有意义。示例：idleByNode=true"
+// @Param        accumulate                     query  bool    false  "是否将多个时间片累加为一个结果。默认 false。示例：window=7d&step=1d&accumulate=true"
+// @Param        accumulateBy                   query  string  false  "累积粒度。支持：none、all、hour、day、week。未设置时，若 accumulate=true，则等价于 all。示例：accumulateBy=day"
+// @Param        includeProportionalAssetResourceCosts  query  bool  false  "是否返回按比例分摊的资产资源成本字段。需要查看 allocation 与底层 asset 关系时使用。示例：includeProportionalAssetResourceCosts=true"
+// @Param        shareIdle                      query  bool    false  "是否将 idle 成本按规则分摊回工作负载。默认 false。示例：shareIdle=true"
+// @Param        includeAggregatedMetadata      query  bool    false  "是否在聚合结果中保留 labels/annotations 的交集元数据。默认 false。示例：includeAggregatedMetadata=true"
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
@@ -2367,12 +2369,12 @@ func isAllocationFilterExprStart(ch byte) bool {
 // @Tags         Allocation
 // @Description  查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。
 // @Description  同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。
-// @Description  支持 filter 参数按集群过滤：`filter=cluster:"c1","c2"` 只返回指定集群。
-// @Param        window      query  string  true   "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围"
-// @Param        filter      query  string  false  "过滤条件，如 cluster:\"c1\" 只返回指定集群；支持逗号分隔多个"
-// @Param        resolution  query  string  false  "Prometheus 查询分辨率，默认 1m"
-// @Param        step        query  string  false  "返回集合的步长，默认等于 window"
-// @Param        accumulate  query  bool    false  "是否累加所有集合"
+// @Description  filter 语法与 allocation/summary 保持一致，常用于限制集群范围。
+// @Param        window      query  string  true   "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d"
+// @Param        filter      query  string  false  "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:\"c1\"、filter=cluster:\"c1\",\"c2\"、filter=cluster:\"prod\"%2Bnamespace:\"default\""
+// @Param        resolution  query  string  false  "Prometheus 查询分辨率。默认 1m。示例：resolution=5m"
+// @Param        step        query  string  false  "返回集合步长。默认等于 window。示例：window=7d&step=1d"
+// @Param        accumulate  query  bool    false  "是否将多个时间片累加为一个结果。默认 false。示例：accumulate=true"
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
@@ -2440,19 +2442,21 @@ func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.Respo
 // ComputeAllocationHandler
 // @Summary      查询成本分配数据
 // @Tags         Allocation
-// @Description  查询 Kubernetes 工作负载的详细成本和资源分配数据，返回 AllocationSetRange 数据结构
-// @Param        window                                  query  string  true   "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围"
-// @Param        filter                                  query  string  false  "过滤条件，使用声明式表达式语法"
-// @Param        resolution                              query  string  false  "Prometheus 查询分辨率，默认 1m"
-// @Param        step                                    query  string  false  "返回集合的步长，默认等于 window"
-// @Param        aggregate                               query  string  false  "聚合维度，如 namespace, pod, label:app 等，逗号分隔支持多维度"
-// @Param        includeIdle                             query  bool    false  "是否包含空闲成本"
-// @Param        idleByNode                              query  bool    false  "按节点级别计算空闲成本"
-// @Param        accumulate                              query  bool    false  "是否累加所有集合"
-// @Param        accumulateBy                            query  string  false  "累加选项: none, all, hour, day, week"
-// @Param        includeProportionalAssetResourceCosts   query  bool    false  "包含比例资产资源成本"
-// @Param        shareIdle                               query  bool    false  "是否共享空闲成本"
-// @Param        includeAggregatedMetadata               query  bool    false  "包含聚合的 label/annotation"
+// @Description  查询 Kubernetes 工作负载的详细成本和资源分配数据，返回 AllocationSetRange。
+// @Description  适合成本明细页、资源使用分析、按命名空间/工作负载钻取。
+// @Description  参数处理顺序为：先按 window/resolution/step 生成分配集合，再按 aggregate 聚合，再按 accumulate/accumulateBy 汇总，最后应用 filter。
+// @Param        window                                  query  string  true   "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
+// @Param        filter                                  query  string  false  "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[<key>]、annotation[<key>]。常用操作：等于 field:\"value\"，不等于 field!:\"value\"，包含 field~:\"value\"，前缀 field<~:\"prefix\"；AND 使用 +，OR 使用 |。示例：filter=cluster:\"host\"%2Bnamespace:\"default\"、filter=controllerKind:\"deployment\"%2Blabel[app]:\"frontend\"、filter=services~:\"gateway\"。注意：URL 中 + 建议编码为 %2B"
+// @Param        resolution                              query  string  false  "Prometheus 查询分辨率。默认 1m。窗口较大时可适当调大。示例：resolution=5m、resolution=1h"
+// @Param        step                                    query  string  false  "返回集合步长。默认等于整个 window。示例：window=7d&step=1d 表示返回 7 个按天切分的 AllocationSet"
+// @Param        aggregate                               query  string  false  "聚合维度。支持单个或多个字段，逗号分隔。常用值：namespace、pod、container、cluster、node、controllerKind、controller、label:<key>、annotation:<key>。示例：aggregate=deployment、aggregate=cluster,namespace、aggregate=label:team"
+// @Param        includeIdle                             query  bool    false  "是否包含 idle 成本。true 时会把未分配的资产成本一起返回。示例：includeIdle=true"
+// @Param        idleByNode                              query  bool    false  "是否按节点级别计算 idle。默认 false 表示集群级别；true 表示节点级别。仅在 includeIdle=true 时有意义。示例：idleByNode=true"
+// @Param        accumulate                              query  bool    false  "是否将多个时间片累加。默认 false。若为 true 且未指定 accumulateBy，则等价于 accumulateBy=all。示例：window=7d&step=1d&accumulate=true"
+// @Param        accumulateBy                            query  string  false  "累积粒度。支持：none、all、hour、day、week。示例：accumulateBy=day 表示输出按天累积的结果"
+// @Param        includeProportionalAssetResourceCosts   query  bool    false  "是否返回 proportionalAssetResourceCosts 字段，用于查看分配成本与底层资产成本的比例关系。示例：includeProportionalAssetResourceCosts=true"
+// @Param        shareIdle                               query  bool    false  "是否将 idle 成本分摊给工作负载。默认 false。示例：shareIdle=true"
+// @Param        includeAggregatedMetadata               query  bool    false  "是否在聚合结果中保留 labels/annotations 的交集元数据。默认 false。示例：includeAggregatedMetadata=true"
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response

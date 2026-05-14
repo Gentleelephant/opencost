@@ -13,7 +13,21 @@
     "host": "localhost:9003",
     "basePath": "/",
     "paths": {
-        "/aggregatedCostModel": {
+        "/healthz": {
+            "get": {
+                "description": "服务健康探针，返回 HTTP 200 表示健康",
+                "tags": [
+                    "System"
+                ],
+                "summary": "健康检查",
+                "responses": {
+                    "200": {
+                        "description": "服务健康"
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/aggregatedCostModel": {
             "get": {
                 "description": "查询聚合后的成本模型数据，支持按窗口、聚合维度等参数筛选",
                 "tags": [
@@ -26,8 +40,7 @@
                         "description": "时间窗口",
                         "name": "window",
                         "in": "query",
-                        "required": true,
-                        "x-example": "1d"
+                        "required": true
                     },
                     {
                         "type": "string",
@@ -39,8 +52,7 @@
                         "type": "string",
                         "description": "聚合维度",
                         "name": "aggregation",
-                        "in": "query",
-                        "x-example": "namespace"
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -57,21 +69,21 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回聚合后的成本数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/allNodePricing": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/allNodePricing": {
             "get": {
                 "description": "获取集群中所有节点的定价数据",
                 "tags": [
@@ -80,17 +92,17 @@
                 "summary": "查询所有节点定价",
                 "responses": {
                     "200": {
-                        "description": "返回所有节点的定价数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/allocation": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation": {
             "get": {
-                "description": "查询 Kubernetes 工作负载的详细成本和资源分配数据，返回 AllocationSetRange 数据结构",
+                "description": "查询 Kubernetes 工作负载的详细成本和资源分配数据，返回 AllocationSetRange。\n适合成本明细页、资源使用分析、按命名空间/工作负载钻取。\n参数处理顺序为：先按 window/resolution/step 生成分配集合，再按 aggregate 聚合，再按 accumulate/accumulateBy 汇总，最后应用 filter。",
                 "tags": [
                     "Allocation"
                 ],
@@ -98,106 +110,103 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围",
+                        "description": "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
                         "name": "window",
                         "in": "query",
-                        "required": true,
-                        "x-example": "1d"
+                        "required": true
                     },
                     {
                         "type": "string",
-                        "description": "过滤条件，使用声明式表达式语法",
+                        "description": "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[\u003ckey\u003e]、annotation[\u003ckey\u003e]。常用操作：等于 field:\\",
                         "name": "filter",
-                        "in": "query",
-                        "x-example": "namespace:\"kube-system\""
+                        "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Prometheus 查询分辨率，默认 1m",
+                        "description": "Prometheus 查询分辨率。默认 1m。窗口较大时可适当调大。示例：resolution=5m、resolution=1h",
                         "name": "resolution",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "返回集合的步长，默认等于 window",
+                        "description": "返回集合步长。默认等于整个 window。示例：window=7d\u0026step=1d 表示返回 7 个按天切分的 AllocationSet",
                         "name": "step",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "聚合维度，如 namespace, pod, label:app 等，逗号分隔支持多维度",
+                        "description": "聚合维度。支持单个或多个字段，逗号分隔。常用值：namespace、pod、container、cluster、node、controllerKind、controller、label:\u003ckey\u003e、annotation:\u003ckey\u003e。示例：aggregate=deployment、aggregate=cluster,namespace、aggregate=label:team",
                         "name": "aggregate",
-                        "in": "query",
-                        "x-example": "namespace"
+                        "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "是否包含空闲成本",
+                        "description": "是否包含 idle 成本。true 时会把未分配的资产成本一起返回。示例：includeIdle=true",
                         "name": "includeIdle",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "按节点级别计算空闲成本",
+                        "description": "是否按节点级别计算 idle。默认 false 表示集群级别；true 表示节点级别。仅在 includeIdle=true 时有意义。示例：idleByNode=true",
                         "name": "idleByNode",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "是否累加所有集合",
+                        "description": "是否将多个时间片累加。默认 false。若为 true 且未指定 accumulateBy，则等价于 accumulateBy=all。示例：window=7d\u0026step=1d\u0026accumulate=true",
                         "name": "accumulate",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "累加选项: none, all, hour, day, week",
+                        "description": "累积粒度。支持：none、all、hour、day、week。示例：accumulateBy=day 表示输出按天累积的结果",
                         "name": "accumulateBy",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "包含比例资产资源成本",
+                        "description": "是否返回 proportionalAssetResourceCosts 字段，用于查看分配成本与底层资产成本的比例关系。示例：includeProportionalAssetResourceCosts=true",
                         "name": "includeProportionalAssetResourceCosts",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "是否共享空闲成本",
+                        "description": "是否将 idle 成本分摊给工作负载。默认 false。示例：shareIdle=true",
                         "name": "shareIdle",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "包含聚合的 label/annotation",
+                        "description": "是否在聚合结果中保留 labels/annotations 的交集元数据。默认 false。示例：includeAggregatedMetadata=true",
                         "name": "includeAggregatedMetadata",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回 AllocationSetRange 数据结构，包含成本分配详情",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/allocation/summary": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation/summary": {
             "get": {
-                "description": "查询 Kubernetes 工作负载的成本和资源分配摘要信息，返回 SummaryAllocationSetRange 数据结构",
+                "description": "查询 Kubernetes 工作负载的摘要分配数据，返回 SummaryAllocationSetRange。\n适合概览卡片、列表页和不需要完整 Allocation 明细的场景。\n参数处理顺序为：按 window/resolution/step 生成分配集合，按 aggregate 聚合，按 accumulate 汇总，最后应用 filter。",
                 "tags": [
                     "Allocation"
                 ],
@@ -205,106 +214,103 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围",
+                        "description": "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
                         "name": "window",
                         "in": "query",
-                        "required": true,
-                        "x-example": "1d"
+                        "required": true
                     },
                     {
                         "type": "string",
-                        "description": "过滤条件，使用声明式表达式语法",
+                        "description": "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[\u003ckey\u003e]、annotation[\u003ckey\u003e]。常用操作：等于 field:\\",
                         "name": "filter",
-                        "in": "query",
-                        "x-example": "namespace:\"kube-system\""
+                        "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Prometheus 查询分辨率，默认 1m",
+                        "description": "Prometheus 查询分辨率。默认 1m。窗口较大时可调大以降低查询压力。示例：resolution=5m、resolution=1h",
                         "name": "resolution",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "返回集合的步长，默认等于 window",
+                        "description": "返回集合步长。默认等于整个 window，即默认只返回一个时间片。示例：window=7d\u0026step=1d 表示返回 7 个按天切分的摘要集合",
                         "name": "step",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "聚合维度，如 namespace, pod, label:app 等",
+                        "description": "聚合维度。支持单个或多个字段，逗号分隔。常用值：namespace、pod、container、cluster、node、controllerKind、controller、label:\u003ckey\u003e、annotation:\u003ckey\u003e。示例：aggregate=namespace、aggregate=cluster,namespace、aggregate=label:team",
                         "name": "aggregate",
-                        "in": "query",
-                        "x-example": "namespace"
+                        "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "是否包含空闲成本",
+                        "description": "是否包含空闲成本。true 时会把资产侧未分配成本作为 idle 计入结果。示例：includeIdle=true",
                         "name": "includeIdle",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "按节点级别计算空闲成本",
+                        "description": "是否按节点拆分 idle。默认 false 表示按集群级别计算 idle；true 表示按节点级别计算。仅在 includeIdle=true 时有意义。示例：idleByNode=true",
                         "name": "idleByNode",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "是否累加所有集合",
+                        "description": "是否将多个时间片累加为一个结果。默认 false。示例：window=7d\u0026step=1d\u0026accumulate=true",
                         "name": "accumulate",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "累加选项: none, all, hour, day, week",
+                        "description": "累积粒度。支持：none、all、hour、day、week。未设置时，若 accumulate=true，则等价于 all。示例：accumulateBy=day",
                         "name": "accumulateBy",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "包含比例资产资源成本",
+                        "description": "是否返回按比例分摊的资产资源成本字段。需要查看 allocation 与底层 asset 关系时使用。示例：includeProportionalAssetResourceCosts=true",
                         "name": "includeProportionalAssetResourceCosts",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "是否共享空闲成本",
+                        "description": "是否将 idle 成本按规则分摊回工作负载。默认 false。示例：shareIdle=true",
                         "name": "shareIdle",
                         "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "包含聚合的 label/annotation",
+                        "description": "是否在聚合结果中保留 labels/annotations 的交集元数据。默认 false。示例：includeAggregatedMetadata=true",
                         "name": "includeAggregatedMetadata",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回 SummaryAllocationSetRange 数据结构，包含成本分配摘要",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/assets": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/assets": {
             "get": {
-                "description": "查询集群中的资产数据（节点、磁盘、负载均衡器等），返回 AssetSet 数据结构",
+                "description": "查询集群中的原始或聚合资产数据，包括节点、磁盘、网络、负载均衡器等。\n不传 aggregate 时返回单个 AssetSet；传 aggregate=type 时返回按时间聚合后的资产集合列表。\n参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 accumulate 进行时间累积并按 type 聚合。",
                 "tags": [
                     "Asset"
                 ],
@@ -312,126 +318,55 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "时间窗口，如 today, week, 7d 或 RFC3339 范围",
+                        "description": "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today、window=week、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
                         "name": "window",
                         "in": "query",
-                        "required": true,
-                        "x-example": "1d"
+                        "required": true
                     },
                     {
                         "type": "string",
-                        "description": "过滤条件",
+                        "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。常用操作：等于 field:\\",
                         "name": "filter",
-                        "in": "query",
-                        "x-example": "namespace:\"kube-system\""
+                        "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "聚合维度，目前仅支持 type",
+                        "description": "聚合维度。当前仅支持 type。留空时返回原始资产集合；传 type 时返回按资产类型聚合后的结果。示例：aggregate=type",
                         "name": "aggregate",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "累积方式，支持 true/all/day/week/month",
+                        "description": "时间累积方式。仅在传 aggregate=type 时生效。支持：true、all、day、week、month。含义：将多个时间片按指定粒度累积。示例：accumulate=all 返回整个窗口的汇总；accumulate=day 返回按天累积",
                         "name": "accumulate",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回 AssetSet 数据结构，包含集群资产详细信息",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/assets/graph": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/assets/carbon": {
             "get": {
-                "description": "查询按资产类型聚合的图表数据，目前仅支持 aggregate=type",
-                "tags": [
-                    "Asset"
-                ],
-                "summary": "查询资产图表数据",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "时间窗口，如 today, week, 7d 或 RFC3339 范围",
-                        "name": "window",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "1d"
-                    },
-                    {
-                        "type": "string",
-                        "description": "聚合维度，默认 type",
-                        "name": "aggregate",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "时间粒度，支持 day/week/month，默认 day",
-                        "name": "accumulate",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "过滤条件",
-                        "name": "filter",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "图表项偏移量",
-                        "name": "offset",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每个时间片返回的最大图表项数量",
-                        "name": "limit",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回资产图表数据",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/assets/carbon": {
-            "get": {
-                "description": "查询集群资产的碳足迹估算数据，返回碳排放量信息。该路由仅在启用 Carbon Estimates 时注册，未启用时部署实例可能返回 404。",
+                "description": "查询资产的碳足迹估算数据，基于资产成本数据推导碳排放信息。\n该路由仅在启用 Carbon Estimates 时注册；若当前部署未启用，可能返回 404。\n参数处理顺序为：先按 window 取资产，再按 filter 过滤，然后计算碳排放结果。",
                 "tags": [
                     "Asset"
                 ],
@@ -439,43 +374,109 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "时间窗口",
+                        "description": "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today",
                         "name": "window",
                         "in": "query",
-                        "required": true,
-                        "x-example": "1d"
+                        "required": true
                     },
                     {
                         "type": "string",
-                        "description": "过滤条件",
+                        "description": "资产过滤条件，语法与 /assets、/assets/graph 保持一致。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。示例：filter=assetType:\\",
                         "name": "filter",
-                        "in": "query",
-                        "x-example": "namespace:\"kube-system\""
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回碳排放估算数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloud/config/delete": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/assets/graph": {
+            "get": {
+                "description": "查询资产图表数据，返回按时间分桶后的资产成本曲线。\n参数处理顺序为：先按 filter 过滤资产，再按 accumulate 切分时间粒度，再按 aggregate 聚合，最后按成本降序并应用 offset/limit。\n适合资产趋势图、TopN 图表、按集群/类型/标签观察资产成本变化。",
+                "tags": [
+                    "Asset"
+                ],
+                "summary": "查询资产图表数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today、window=week、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
+                        "name": "window",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度。默认 type。当前仅支持单个资产维度，常用值：type、name、cluster、provider、service、category、account、project、providerID、label:\u003ckey\u003e。示例：aggregate=cluster、aggregate=service、aggregate=label:team",
+                        "name": "aggregate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "时间粒度。默认 day。支持：hour、day、week、month。含义：按小时、按天、按周、按月返回图表桶。示例：accumulate=hour 用于 24 小时趋势；accumulate=week 用于周维度报表",
+                        "name": "accumulate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。常用操作：等于 field:\\",
+                        "name": "filter",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图表项偏移量。默认 0。对每个时间片内按成本降序排列后的结果进行跳过，用于分页或查看 TopN 之后的条目。示例：offset=0 返回前 N 个；offset=10 表示跳过前 10 个",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每个时间片返回的最大图表项数量。默认 25。仅影响返回展示数量，不改变底层成本计算。示例：limit=10 返回每个时间片成本最高的 10 个聚合项",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/delete": {
             "get": {
                 "description": "删除指定的云提供商配置",
                 "tags": [
@@ -488,21 +489,20 @@
                         "description": "配置键",
                         "name": "key",
                         "in": "query",
-                        "required": true,
-                        "x-example": "your-service-account-key"
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回配置删除结果",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloud/config/disable": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/disable": {
             "get": {
                 "description": "禁用指定的云提供商配置",
                 "tags": [
@@ -515,21 +515,20 @@
                         "description": "配置键",
                         "name": "key",
                         "in": "query",
-                        "required": true,
-                        "x-example": "your-service-account-key"
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回配置禁用结果",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloud/config/enable": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/enable": {
             "get": {
                 "description": "启用指定的云提供商配置",
                 "tags": [
@@ -542,21 +541,20 @@
                         "description": "配置键",
                         "name": "key",
                         "in": "query",
-                        "required": true,
-                        "x-example": "your-service-account-key"
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回配置启用结果",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloud/config/export": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/export": {
             "get": {
                 "description": "导出当前云提供商配置",
                 "tags": [
@@ -565,15 +563,15 @@
                 "summary": "导出云配置",
                 "responses": {
                     "200": {
-                        "description": "返回当前云配置",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloudCost": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost": {
             "get": {
                 "description": "查询云提供商账单成本数据",
                 "tags": [
@@ -585,47 +583,44 @@
                         "type": "string",
                         "description": "时间窗口",
                         "name": "window",
-                        "in": "query",
-                        "x-example": "1d"
+                        "in": "query"
                     },
                     {
                         "type": "string",
                         "description": "聚合维度",
                         "name": "aggregate",
-                        "in": "query",
-                        "x-example": "namespace"
+                        "in": "query"
                     },
                     {
                         "type": "string",
                         "description": "过滤条件",
                         "name": "filter",
-                        "in": "query",
-                        "x-example": "namespace:\"kube-system\""
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回云成本数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloudCost/rebuild": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/rebuild": {
             "get": {
                 "description": "触发云成本数据的重新计算",
                 "tags": [
@@ -634,15 +629,15 @@
                 "summary": "重建云成本数据",
                 "responses": {
                     "200": {
-                        "description": "返回数据重建结果",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloudCost/repair": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/repair": {
             "get": {
                 "description": "修复已检测到的云成本数据一致性问题",
                 "tags": [
@@ -651,15 +646,15 @@
                 "summary": "修复云成本数据",
                 "responses": {
                     "200": {
-                        "description": "返回数据修复结果",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloudCost/status": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/status": {
             "get": {
                 "description": "获取云成本数据处理管道的当前状态",
                 "tags": [
@@ -668,15 +663,15 @@
                 "summary": "查询云成本管道状态",
                 "responses": {
                     "200": {
-                        "description": "返回云成本管道状态信息",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloudCost/view/graph": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/view/graph": {
             "get": {
                 "description": "获取图表展示用的云成本聚合数据",
                 "tags": [
@@ -688,21 +683,20 @@
                         "type": "string",
                         "description": "时间窗口",
                         "name": "window",
-                        "in": "query",
-                        "x-example": "1d"
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回云成本图形视图数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloudCost/view/table": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/view/table": {
             "get": {
                 "description": "获取表格展示用的详细云成本数据",
                 "tags": [
@@ -714,21 +708,20 @@
                         "type": "string",
                         "description": "时间窗口",
                         "name": "window",
-                        "in": "query",
-                        "x-example": "1d"
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回云成本表格数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/cloudCost/view/totals": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/view/totals": {
             "get": {
                 "description": "获取云成本总计和分类汇总数据",
                 "tags": [
@@ -740,21 +733,20 @@
                         "type": "string",
                         "description": "时间窗口",
                         "name": "window",
-                        "in": "query",
-                        "x-example": "1d"
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回云成本总计数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/clusterCosts": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/clusterCosts": {
             "get": {
                 "description": "查询指定时间窗口的集群成本汇总数据。当前实现会把缺失或非法参数编码为 HTTP 200 的错误响应体，而不是返回 HTTP 400。",
                 "tags": [
@@ -767,8 +759,7 @@
                         "description": "时间窗口",
                         "name": "window",
                         "in": "query",
-                        "required": true,
-                        "x-example": "1d"
+                        "required": true
                     },
                     {
                         "type": "string",
@@ -785,15 +776,15 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回集群成本汇总数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/clusterCostsFromCache": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/clusterCostsFromCache": {
             "get": {
                 "description": "从缓存中获取 24 小时集群成本数据",
                 "tags": [
@@ -802,17 +793,17 @@
                 "summary": "从缓存查询集群成本",
                 "responses": {
                     "200": {
-                        "description": "返回缓存的集群成本数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/clusterCostsOverTime": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/clusterCostsOverTime": {
             "get": {
-                "description": "按时间范围查询集群成本的变化趋势数据。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
+                "description": "按时间范围查询集群成本的变化趋势数据。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式；当前实现会把参数错误编码为 HTTP 200 的错误响应体。",
                 "tags": [
                     "Cluster"
                 ],
@@ -823,24 +814,21 @@
                         "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
                         "name": "start",
                         "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-01T00:00:00.000Z"
+                        "required": true
                     },
                     {
                         "type": "string",
                         "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
                         "name": "end",
                         "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-07T00:00:00.000Z"
+                        "required": true
                     },
                     {
                         "type": "string",
                         "description": "时间窗口",
                         "name": "window",
                         "in": "query",
-                        "required": true,
-                        "x-example": "1d"
+                        "required": true
                     },
                     {
                         "type": "string",
@@ -851,15 +839,15 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回集群成本时间序列数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/clusterInfo": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/clusterInfo": {
             "get": {
                 "description": "获取当前集群的基本信息和配置",
                 "tags": [
@@ -868,15 +856,15 @@
                 "summary": "查询集群信息",
                 "responses": {
                     "200": {
-                        "description": "返回集群基本信息和配置",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/clusterInfoMap": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/clusterInfoMap": {
             "get": {
                 "description": "获取所有已知集群的信息映射表",
                 "tags": [
@@ -885,15 +873,15 @@
                 "summary": "查询集群信息映射",
                 "responses": {
                     "200": {
-                        "description": "返回所有已知集群的信息映射",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/costDataModel": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/costDataModel": {
             "get": {
                 "description": "查询指定时间窗口内的成本数据模型。当前实现允许省略 timeWindow，但结果依赖后端默认处理逻辑。",
                 "tags": [
@@ -928,17 +916,17 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回成本数据模型原始数据",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/costDataModelRange": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/costDataModelRange": {
             "get": {
-                "description": "查询指定时间范围内的成本数据模型。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
+                "description": "查询指定时间范围内的成本数据模型。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式；当前实现会把参数错误编码为 HTTP 200 的错误响应体。",
                 "tags": [
                     "Cost Model"
                 ],
@@ -949,23 +937,20 @@
                         "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
                         "name": "start",
                         "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-01T00:00:00.000Z"
+                        "required": true
                     },
                     {
                         "type": "string",
                         "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
                         "name": "end",
                         "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-07T00:00:00.000Z"
+                        "required": true
                     },
                     {
                         "type": "string",
                         "description": "窗口分辨率",
                         "name": "window",
-                        "in": "query",
-                        "x-example": "1d"
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -994,15 +979,15 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回指定时间范围的成本数据模型",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/customCost/status": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/customCost/status": {
             "get": {
                 "description": "获取自定义成本数据处理管道的当前状态",
                 "tags": [
@@ -1011,15 +996,15 @@
                 "summary": "查询自定义成本管道状态",
                 "responses": {
                     "200": {
-                        "description": "返回自定义成本管道状态",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/customCost/timeseries": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/customCost/timeseries": {
             "get": {
                 "description": "查询用户自定义成本数据的时间序列",
                 "tags": [
@@ -1031,8 +1016,7 @@
                         "type": "string",
                         "description": "时间窗口",
                         "name": "window",
-                        "in": "query",
-                        "x-example": "1d"
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -1043,15 +1027,15 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回自定义成本时间序列",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/customCost/total": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/customCost/total": {
             "get": {
                 "description": "查询用户自定义成本数据的总计",
                 "tags": [
@@ -1063,21 +1047,20 @@
                         "type": "string",
                         "description": "时间窗口",
                         "name": "window",
-                        "in": "query",
-                        "x-example": "1d"
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回自定义成本总计",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/customPricing": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/customPricing": {
             "get": {
                 "description": "获取当前云提供商的自定义定价配置数据",
                 "tags": [
@@ -1086,15 +1069,15 @@
                 "summary": "查询自定义定价配置",
                 "responses": {
                     "200": {
-                        "description": "返回自定义定价配置",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/diagnostics/prometheusMetrics": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/diagnostics/prometheusMetrics": {
             "get": {
                 "description": "获取 Prometheus 和 Thanos 的诊断可用性指标",
                 "tags": [
@@ -1103,15 +1086,15 @@
                 "summary": "查询 Prometheus 诊断指标",
                 "responses": {
                     "200": {
-                        "description": "返回 Prometheus/Thanos 诊断指标",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/diagnostics/requestQueue": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/diagnostics/requestQueue": {
             "get": {
                 "description": "获取 Prometheus 和 Thanos 请求队列的当前状态",
                 "tags": [
@@ -1120,29 +1103,139 @@
                 "summary": "查询 Prometheus 请求队列状态",
                 "responses": {
                     "200": {
-                        "description": "返回 Prometheus/Thanos 请求队列状态",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/healthz": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters": {
             "get": {
-                "description": "服务健康探针，返回 HTTP 200 表示健康",
+                "description": "查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。\n同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。\nfilter 语法与 allocation/summary 保持一致，常用于限制集群范围。",
                 "tags": [
-                    "System"
+                    "Allocation"
                 ],
-                "summary": "健康检查",
+                "summary": "查询集群效率摘要数据 + 每资源类型 allocation/usage/idle 拆分",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d",
+                        "name": "window",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:\\",
+                        "name": "filter",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prometheus 查询分辨率。默认 1m。示例：resolution=5m",
+                        "name": "resolution",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回集合步长。默认等于 window。示例：window=7d\u0026step=1d",
+                        "name": "step",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否将多个时间片累加为一个结果。默认 false。示例：accumulate=true",
+                        "name": "accumulate",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "空响应，状态码表示服务健康"
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
                     }
                 }
             }
         },
-        "/helmValues": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters/summary": {
+            "get": {
+                "description": "查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。\n同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。\nfilter 语法与 allocation/summary 保持一致，常用于限制集群范围。",
+                "tags": [
+                    "Allocation"
+                ],
+                "summary": "查询集群效率摘要数据 + 每资源类型 allocation/usage/idle 拆分",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d",
+                        "name": "window",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:\\",
+                        "name": "filter",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prometheus 查询分辨率。默认 1m。示例：resolution=5m",
+                        "name": "resolution",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "返回集合步长。默认等于 window。示例：window=7d\u0026step=1d",
+                        "name": "step",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否将多个时间片累加为一个结果。默认 false。示例：accumulate=true",
+                        "name": "accumulate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/helmValues": {
             "get": {
                 "description": "获取部署时使用的 Helm values 配置",
                 "tags": [
@@ -1151,15 +1244,15 @@
                 "summary": "查询 Helm 配置值",
                 "responses": {
                     "200": {
-                        "description": "返回 Helm 配置值",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
             }
         },
-        "/installInfo": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/installInfo": {
             "get": {
                 "description": "获取 OpenCost 的安装信息，包括容器信息和版本",
                 "tags": [
@@ -1168,9 +1261,9 @@
                 "summary": "查询安装信息",
                 "responses": {
                     "200": {
-                        "description": "返回安装信息（容器、版本等）",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.InstallInfo"
+                            "$ref": "#/definitions/costmodel.InstallInfo"
                         }
                     },
                     "500": {
@@ -1182,7 +1275,7 @@
                 }
             }
         },
-        "/installNamespace": {
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/installNamespace": {
             "get": {
                 "description": "获取 OpenCost 安装的 Kubernetes 命名空间",
                 "tags": [
@@ -1191,9 +1284,450 @@
                 "summary": "查询安装命名空间",
                 "responses": {
                     "200": {
-                        "description": "返回命名空间名称字符串",
+                        "description": "命名空间名称",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/managementPlatform": {
+            "get": {
+                "description": "获取当前集群所属的管理平台信息",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询管理平台信息",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/orphanedPods": {
+            "get": {
+                "description": "获取集群中没有 OwnerReference 的孤立 Pod 列表",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询孤立 Pod",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {}
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceCounts": {
+            "get": {
+                "description": "获取各定价数据源的数量统计",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询定价源计数",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceStatus": {
+            "get": {
+                "description": "获取云提供商定价数据源的当前状态",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询定价源状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceSummary": {
+            "get": {
+                "description": "获取定价数据源的摘要信息",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "查询定价源摘要",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/prometheusConfig": {
+            "get": {
+                "description": "获取 Prometheus 服务端点地址等配置信息",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus 配置信息",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/prometheusQuery": {
+            "get": {
+                "description": "代理执行 Prometheus 即时查询，返回原生查询结果。当前实现对缺失 query 参数返回 HTTP 200 错误响应体；仅非法 time 格式返回 HTTP 400。",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus 即时查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "查询时间点，Unix 时间戳或 RFC3339",
+                        "name": "time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/costmodel.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/prometheusQueryRange": {
+            "get": {
+                "description": "代理执行 Prometheus 范围查询，返回时间序列数据。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式；当前实现读取的步长参数名为 duration，并把参数错误写入 HTTP 200 的文本响应体。",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus 范围查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "步长，Go duration 格式，例如 300s",
+                        "name": "duration",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/prometheusRecordingRules": {
+            "get": {
+                "description": "代理获取 Prometheus 的 recording rules 配置",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus Recording Rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {}
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/prometheusTargets": {
+            "get": {
+                "description": "代理获取 Prometheus 的目标端点列表",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Prometheus Targets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {}
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/refreshPricing": {
+            "post": {
+                "description": "当新节点加入集群时刷新云提供商定价数据缓存",
+                "tags": [
+                    "Pricing"
+                ],
+                "summary": "刷新定价数据",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/serviceAccountStatus": {
+            "get": {
+                "description": "获取云提供商服务账号的当前状态",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询服务账号状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/serviceKey": {
+            "post": {
+                "description": "将云提供商服务密钥写入配置文件。当前实现即使未提供 key 也会返回 HTTP 200。",
+                "tags": [
+                    "Configuration"
+                ],
+                "summary": "添加服务密钥",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务密钥；当前实现未强制校验",
+                        "name": "key",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "500": {
+                        "description": "Error writing service key",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/status": {
+            "get": {
+                "description": "获取 OpenCost 服务状态和 Prometheus 连接信息",
+                "tags": [
+                    "System"
+                ],
+                "summary": "查询服务状态",
+                "responses": {
+                    "200": {
+                        "description": "使用 Prometheus 的信息",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/thanosQuery": {
+            "get": {
+                "description": "代理执行 Thanos 即时查询（需启用 Thanos）。若未启用 Thanos，当前实现返回 HTTP 200 错误响应体；仅非法 time 格式返回 HTTP 400。",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Thanos 即时查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "查询时间点",
+                        "name": "time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/costmodel.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/thanosQueryRange": {
+            "get": {
+                "description": "代理执行 Thanos 范围查询（需启用 Thanos）。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式；当前实现读取的步长参数名为 duration。若未启用 Thanos 或参数错误，当前实现返回 HTTP 200 响应体。",
+                "tags": [
+                    "Prometheus"
+                ],
+                "summary": "Thanos 范围查询代理",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PromQL 查询语句",
+                        "name": "query",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "步长，Go duration 格式，例如 300s",
+                        "name": "duration",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/validatePrometheus": {
+            "get": {
+                "description": "验证与 Prometheus 的连接状态并返回元数据",
+                "tags": [
+                    "Diagnostics"
+                ],
+                "summary": "验证 Prometheus 连接",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
                         }
                     }
                 }
@@ -1208,9 +1742,9 @@
                 "summary": "获取日志级别",
                 "responses": {
                     "200": {
-                        "description": "返回当前日志级别（GET）或设置结果（POST）",
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/pkg_cmd_costmodel.LogLevelRequestResponse"
+                            "$ref": "#/definitions/costmodel.LogLevelRequestResponse"
                         }
                     },
                     "500": {
@@ -1234,14 +1768,13 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/pkg_cmd_costmodel.LogLevelRequestResponse"
-                        },
-                        "x-example": "{\"level\":\"info\"}"
+                            "$ref": "#/definitions/costmodel.LogLevelRequestResponse"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回当前日志级别（GET）或设置结果（POST）"
+                        "description": "设置成功"
                     },
                     "400": {
                         "description": "无效的日志级别",
@@ -1251,536 +1784,10 @@
                     }
                 }
             }
-        },
-        "/managementPlatform": {
-            "get": {
-                "description": "获取当前集群所属的管理平台信息",
-                "tags": [
-                    "System"
-                ],
-                "summary": "查询管理平台信息",
-                "responses": {
-                    "200": {
-                        "description": "返回管理平台信息",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/orphanedPods": {
-            "get": {
-                "description": "获取集群中没有 OwnerReference 的孤立 Pod 列表",
-                "tags": [
-                    "System"
-                ],
-                "summary": "查询孤立 Pod",
-                "responses": {
-                    "200": {
-                        "description": "返回孤立 Pod 列表",
-                        "schema": {}
-                    }
-                }
-            }
-        },
-        "/pricingSourceCounts": {
-            "get": {
-                "description": "获取各定价数据源的数量统计",
-                "tags": [
-                    "Pricing"
-                ],
-                "summary": "查询定价源计数",
-                "responses": {
-                    "200": {
-                        "description": "返回定价数据源数量统计",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/pricingSourceStatus": {
-            "get": {
-                "description": "获取云提供商定价数据源的当前状态",
-                "tags": [
-                    "Pricing"
-                ],
-                "summary": "查询定价源状态",
-                "responses": {
-                    "200": {
-                        "description": "返回定价数据源状态",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/pricingSourceSummary": {
-            "get": {
-                "description": "获取定价数据源的摘要信息",
-                "tags": [
-                    "Pricing"
-                ],
-                "summary": "查询定价源摘要",
-                "responses": {
-                    "200": {
-                        "description": "返回定价数据源摘要",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/prometheusConfig": {
-            "get": {
-                "description": "获取 Prometheus 服务端点地址等配置信息",
-                "tags": [
-                    "Prometheus"
-                ],
-                "summary": "Prometheus 配置信息",
-                "responses": {
-                    "200": {
-                        "description": "返回 Prometheus 配置信息",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/prometheusQuery": {
-            "get": {
-                "description": "代理执行 Prometheus 即时查询，返回原生查询结果。当前实现对缺失 query 参数返回 HTTP 200 错误响应体；仅非法 time 格式返回 HTTP 400。",
-                "tags": [
-                    "Prometheus"
-                ],
-                "summary": "Prometheus 即时查询代理",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "PromQL 查询语句",
-                        "name": "query",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "sum(kube_pod_info)"
-                    },
-                    {
-                        "type": "string",
-                        "description": "查询时间点，Unix 时间戳或 RFC3339",
-                        "name": "time",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回 Prometheus 即时查询原始结果",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/pkg_costmodel.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        },
-        "/prometheusQueryRange": {
-            "get": {
-                "description": "代理执行 Prometheus 范围查询，返回时间序列数据。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
-                "tags": [
-                    "Prometheus"
-                ],
-                "summary": "Prometheus 范围查询代理",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "PromQL 查询语句",
-                        "name": "query",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "sum(kube_pod_info)"
-                    },
-                    {
-                        "type": "string",
-                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
-                        "name": "start",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-01T00:00:00.000Z"
-                    },
-                    {
-                        "type": "string",
-                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
-                        "name": "end",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-07T00:00:00.000Z"
-                    },
-                    {
-                        "type": "string",
-                        "description": "步长，Go duration 格式，例如 300s",
-                        "name": "duration",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "3600s"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回 Prometheus 范围查询时间序列数据",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/prometheusRecordingRules": {
-            "get": {
-                "description": "代理获取 Prometheus 的 recording rules 配置",
-                "tags": [
-                    "Prometheus"
-                ],
-                "summary": "Prometheus Recording Rules",
-                "responses": {
-                    "200": {
-                        "description": "返回 Prometheus recording rules 配置",
-                        "schema": {}
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/prometheusTargets": {
-            "get": {
-                "description": "代理获取 Prometheus 的目标端点列表",
-                "tags": [
-                    "Prometheus"
-                ],
-                "summary": "Prometheus Targets",
-                "responses": {
-                    "200": {
-                        "description": "返回 Prometheus 目标端点列表",
-                        "schema": {}
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/refreshPricing": {
-            "post": {
-                "description": "当新节点加入集群时刷新云提供商定价数据缓存",
-                "tags": [
-                    "Pricing"
-                ],
-                "summary": "刷新定价数据",
-                "responses": {
-                    "200": {
-                        "description": "返回定价数据刷新结果",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/serviceAccountStatus": {
-            "get": {
-                "description": "获取云提供商服务账号的当前状态",
-                "tags": [
-                    "System"
-                ],
-                "summary": "查询服务账号状态",
-                "responses": {
-                    "200": {
-                        "description": "返回服务账号状态信息",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/serviceKey": {
-            "post": {
-                "description": "将云提供商服务密钥写入配置文件。当前实现即使未提供 key 也会返回 HTTP 200。",
-                "tags": [
-                    "Configuration"
-                ],
-                "summary": "添加服务密钥",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "服务密钥；当前实现未强制校验",
-                        "name": "key",
-                        "in": "formData",
-                        "x-example": "your-service-account-key"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回服务密钥写入结果"
-                    },
-                    "500": {
-                        "description": "Error writing service key",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/status": {
-            "get": {
-                "description": "获取 OpenCost 服务状态和 Prometheus 连接信息",
-                "tags": [
-                    "System"
-                ],
-                "summary": "查询服务状态",
-                "responses": {
-                    "200": {
-                        "description": "返回 Prometheus 连接信息",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/thanosQuery": {
-            "get": {
-                "description": "代理执行 Thanos 即时查询（需启用 Thanos）。若未启用 Thanos，当前实现返回 HTTP 200 错误响应体；仅非法 time 格式返回 HTTP 400。",
-                "tags": [
-                    "Prometheus"
-                ],
-                "summary": "Thanos 即时查询代理",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "PromQL 查询语句",
-                        "name": "query",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "sum(kube_pod_info)"
-                    },
-                    {
-                        "type": "string",
-                        "description": "查询时间点",
-                        "name": "time",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回 Thanos 即时查询原始结果",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/pkg_costmodel.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            }
-        },
-        "/thanosQueryRange": {
-            "get": {
-                "description": "代理执行 Thanos 范围查询（需启用 Thanos）。start 和 end 需要使用 2006-01-02T15:04:05.000Z 格式",
-                "tags": [
-                    "Prometheus"
-                ],
-                "summary": "Thanos 范围查询代理",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "PromQL 查询语句",
-                        "name": "query",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "sum(kube_pod_info)"
-                    },
-                    {
-                        "type": "string",
-                        "description": "开始时间，格式 2006-01-02T15:04:05.000Z",
-                        "name": "start",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-01T00:00:00.000Z"
-                    },
-                    {
-                        "type": "string",
-                        "description": "结束时间，格式 2006-01-02T15:04:05.000Z",
-                        "name": "end",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "2026-05-07T00:00:00.000Z"
-                    },
-                    {
-                        "type": "string",
-                        "description": "步长，Go duration 格式，例如 300s",
-                        "name": "duration",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "3600s"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回 Thanos 范围查询时间序列数据",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/validatePrometheus": {
-            "get": {
-                "description": "验证与 Prometheus 的连接状态并返回元数据",
-                "tags": [
-                    "Diagnostics"
-                ],
-                "summary": "验证 Prometheus 连接",
-                "responses": {
-                    "200": {
-                        "description": "返回 Prometheus 连接验证结果",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/efficiency/clusters/summary": {
-            "get": {
-                "description": "查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率",
-                "tags": [
-                    "Allocation"
-                ],
-                "summary": "查询集群效率摘要数据",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "时间窗口，如 today, week, month, 30m, 12h, 7d 或 RFC3339 范围",
-                        "name": "window",
-                        "in": "query",
-                        "required": true,
-                        "x-example": "7d"
-                    },
-                    {
-                        "type": "string",
-                        "description": "过滤条件，使用声明式表达式语法",
-                        "name": "filter",
-                        "in": "query",
-                        "x-example": "namespace:\"kube-system\""
-                    },
-                    {
-                        "type": "string",
-                        "description": "Prometheus 查询分辨率，默认 1m",
-                        "name": "resolution",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "返回集合的步长，默认等于 window",
-                        "name": "step",
-                        "in": "query",
-                        "x-example": "1d"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "是否累加所有集合",
-                        "name": "accumulate",
-                        "in": "query",
-                        "x-example": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回按集群聚合的效率摘要，包含每个集群的效率、workload idle、infra idle、total idle 以及多集群统一效率",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误",
-                        "schema": {
-                            "$ref": "#/definitions/pkg_costmodel.Response"
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
-        "pkg_cmd_costmodel.LogLevelRequestResponse": {
-            "type": "object",
-            "properties": {
-                "level": {
-                    "type": "string"
-                }
-            }
-        },
-        "pkg_costmodel.ContainerInfo": {
+        "costmodel.ContainerInfo": {
             "type": "object",
             "properties": {
                 "containerName": {
@@ -1794,7 +1801,7 @@
                 }
             }
         },
-        "pkg_costmodel.InstallInfo": {
+        "costmodel.InstallInfo": {
             "type": "object",
             "properties": {
                 "clusterInfo": {
@@ -1806,7 +1813,7 @@
                 "containers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/pkg_costmodel.ContainerInfo"
+                        "$ref": "#/definitions/costmodel.ContainerInfo"
                     }
                 },
                 "version": {
@@ -1814,7 +1821,15 @@
                 }
             }
         },
-        "pkg_costmodel.Response": {
+        "costmodel.LogLevelRequestResponse": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string"
+                }
+            }
+        },
+        "costmodel.Response": {
             "type": "object",
             "properties": {
                 "code": {

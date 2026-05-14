@@ -14,11 +14,13 @@ import (
 // ComputeAssetsHandler returns the assets from the CostModel.
 // @Summary      查询资产数据
 // @Tags         Asset
-// @Description  查询集群中的资产数据（节点、磁盘、负载均衡器等），返回 AssetSet 数据结构
-// @Param        window    query  string  true   "时间窗口，如 today, week, 7d 或 RFC3339 范围"
-// @Param        filter    query  string  false  "过滤条件"
-// @Param        aggregate query  string  false  "聚合维度，目前仅支持 type"
-// @Param        accumulate query string  false  "累积方式，支持 true/all/day/week/month"
+// @Description  查询集群中的原始或聚合资产数据，包括节点、磁盘、网络、负载均衡器等。
+// @Description  不传 aggregate 时返回单个 AssetSet；传 aggregate=type 时返回按时间聚合后的资产集合列表。
+// @Description  参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 accumulate 进行时间累积并按 type 聚合。
+// @Param        window     query  string  true   "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today、window=week、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
+// @Param        filter     query  string  false  "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[<key>]。常用操作：等于 field:\"value\"，不等于 field!:\"value\"，包含 field~:\"value\"，前缀 field<~:\"prefix\"；AND 使用 +，OR 使用 |。示例：filter=assetType:\"node\"、filter=cluster:\"prod\"%2Bprovider:\"aws\"、filter=label[team]:\"platform\"。注意：URL 中 + 建议编码为 %2B"
+// @Param        aggregate  query  string  false  "聚合维度。当前仅支持 type。留空时返回原始资产集合；传 type 时返回按资产类型聚合后的结果。示例：aggregate=type"
+// @Param        accumulate query  string  false  "时间累积方式。仅在传 aggregate=type 时生效。支持：true、all、day、week、month。含义：将多个时间片按指定粒度累积。示例：accumulate=all 返回整个窗口的汇总；accumulate=day 返回按天累积"
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
@@ -80,13 +82,15 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 // ComputeAssetsGraphHandler returns graph-ready aggregated asset costs.
 // @Summary      查询资产图表数据
 // @Tags         Asset
-// @Description  查询资产图表数据，默认按资产类型聚合，支持单个资产维度如 type、name、cluster、label:<key>
-// @Param        window     query  string  true   "时间窗口，如 today, week, 7d 或 RFC3339 范围"
-// @Param        aggregate  query  string  false  "聚合维度，默认 type，支持单个资产维度如 type、name、cluster、label:<key>"
-// @Param        accumulate query  string  false  "时间粒度，支持 hour/day/week/month，默认 day"
-// @Param        filter     query  string  false  "过滤条件"
-// @Param        offset     query  int     false  "图表项偏移量"
-// @Param        limit      query  int     false  "每个时间片返回的最大图表项数量"
+// @Description  查询资产图表数据，返回按时间分桶后的资产成本曲线。
+// @Description  参数处理顺序为：先按 filter 过滤资产，再按 accumulate 切分时间粒度，再按 aggregate 聚合，最后按成本降序并应用 offset/limit。
+// @Description  适合资产趋势图、TopN 图表、按集群/类型/标签观察资产成本变化。
+// @Param        window     query  string  true   "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today、window=week、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
+// @Param        aggregate  query  string  false  "聚合维度。默认 type。当前仅支持单个资产维度，常用值：type、name、cluster、provider、service、category、account、project、providerID、label:<key>。示例：aggregate=cluster、aggregate=service、aggregate=label:team"
+// @Param        accumulate query  string  false  "时间粒度。默认 day。支持：hour、day、week、month。含义：按小时、按天、按周、按月返回图表桶。示例：accumulate=hour 用于 24 小时趋势；accumulate=week 用于周维度报表"
+// @Param        filter     query  string  false  "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[<key>]。常用操作：等于 field:\"value\"，不等于 field!:\"value\"，包含 field~:\"value\"，前缀 field<~:\"prefix\"；AND 使用 +，OR 使用 |。示例：filter=assetType:\"node\"、filter=provider:\"aws\"%2BassetType:\"disk\"、filter=cluster:\"prod\"%2Blabel[team]:\"platform\"。注意：URL 中 + 建议编码为 %2B，避免被解释为空格"
+// @Param        offset     query  int     false  "图表项偏移量。默认 0。对每个时间片内按成本降序排列后的结果进行跳过，用于分页或查看 TopN 之后的条目。示例：offset=0 返回前 N 个；offset=10 表示跳过前 10 个"
+// @Param        limit      query  int     false  "每个时间片返回的最大图表项数量。默认 25。仅影响返回展示数量，不改变底层成本计算。示例：limit=10 返回每个时间片成本最高的 10 个聚合项"
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
@@ -141,9 +145,11 @@ func (a *Accesses) ComputeAssetsGraphHandler(w http.ResponseWriter, r *http.Requ
 // ComputeAssetsCarbonHandler returns carbon estimates for assets.
 // @Summary      查询资产碳排放数据
 // @Tags         Asset
-// @Description  查询集群资产的碳足迹估算数据，返回碳排放量信息。该路由仅在启用 Carbon Estimates 时注册，未启用时部署实例可能返回 404。
-// @Param        window    query  string  true   "时间窗口"
-// @Param        filter    query  string  false  "过滤条件"
+// @Description  查询资产的碳足迹估算数据，基于资产成本数据推导碳排放信息。
+// @Description  该路由仅在启用 Carbon Estimates 时注册；若当前部署未启用，可能返回 404。
+// @Description  参数处理顺序为：先按 window 取资产，再按 filter 过滤，然后计算碳排放结果。
+// @Param        window    query  string  true   "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today"
+// @Param        filter    query  string  false  "资产过滤条件，语法与 /assets、/assets/graph 保持一致。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[<key>]。示例：filter=assetType:\"node\"、filter=cluster:\"prod\"%2Bprovider:\"aws\""
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
