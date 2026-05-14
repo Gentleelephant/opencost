@@ -324,11 +324,92 @@
                         "name": "filter",
                         "in": "query",
                         "x-example": "namespace:\"kube-system\""
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度，目前仅支持 type",
+                        "name": "aggregate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "累积方式，支持 true/all/day/week/month",
+                        "name": "accumulate",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "返回 AssetSet 数据结构，包含集群资产详细信息",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/pkg_costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/assets/graph": {
+            "get": {
+                "description": "查询按资产类型聚合的图表数据，目前仅支持 aggregate=type",
+                "tags": [
+                    "Asset"
+                ],
+                "summary": "查询资产图表数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口，如 today, week, 7d 或 RFC3339 范围",
+                        "name": "window",
+                        "in": "query",
+                        "required": true,
+                        "x-example": "1d"
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度，默认 type",
+                        "name": "aggregate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "时间粒度，支持 day/week/month，默认 day",
+                        "name": "accumulate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "过滤条件",
+                        "name": "filter",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图表项偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每个时间片返回的最大图表项数量",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回资产图表数据",
                         "schema": {
                             "$ref": "#/definitions/pkg_costmodel.Response"
                         }
