@@ -14,6 +14,7 @@ func TestQueryAggregatedAssetSetRangeAccumulateAll(t *testing.T) {
 	asr, err := queryAggregatedAssetSetRange(
 		opencost.NewClosedWindow(start, end),
 		"",
+		defaultAssetAggregate,
 		opencost.AccumulateOptionAll,
 		mockAssetComputer(map[int64]*opencost.AssetSet{
 			start.Unix():                     testAssetSet(start, start.Add(24*time.Hour), 10, 2, 0),
@@ -45,6 +46,7 @@ func TestQueryAggregatedAssetSetRangeDayAndFilter(t *testing.T) {
 	asr, err := queryAggregatedAssetSetRange(
 		opencost.NewClosedWindow(start, end),
 		`assetType:"node"`,
+		defaultAssetAggregate,
 		opencost.AccumulateOptionDay,
 		mockAssetComputer(map[int64]*opencost.AssetSet{
 			start.Unix():                     testAssetSet(start, start.Add(24*time.Hour), 10, 2, 0),
@@ -81,6 +83,7 @@ func TestBuildAssetGraphResponseSortOffsetAndLimit(t *testing.T) {
 	asr, err := queryAggregatedAssetSetRange(
 		opencost.NewClosedWindow(start, end),
 		"",
+		defaultAssetAggregate,
 		opencost.AccumulateOptionDay,
 		mockAssetComputer(map[int64]*opencost.AssetSet{
 			start.Unix(): testAssetSet(start, end, 10, 2, 1),
@@ -105,6 +108,76 @@ func TestBuildAssetGraphResponseSortOffsetAndLimit(t *testing.T) {
 	if item.Cost != 2 {
 		t.Fatalf("expected Disk cost 2, got %f", item.Cost)
 	}
+}
+
+func TestQueryAggregatedAssetSetRangeHourReturnsHourlyBuckets(t *testing.T) {
+	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
+	end := start.Add(48 * time.Hour)
+
+	sets := map[int64]*opencost.AssetSet{}
+	for i := 0; i < 48; i++ {
+		bucketStart := start.Add(time.Duration(i) * time.Hour)
+		bucketEnd := bucketStart.Add(time.Hour)
+		sets[bucketStart.Unix()] = testAssetSet(bucketStart, bucketEnd, 1, 0, 0)
+	}
+
+	asr, err := queryAggregatedAssetSetRange(
+		opencost.NewClosedWindow(start, end),
+		"",
+		defaultAssetAggregate,
+		opencost.AccumulateOptionHour,
+		mockAssetComputer(sets),
+	)
+	if err != nil {
+		t.Fatalf("queryAggregatedAssetSetRange returned error: %v", err)
+	}
+
+	if got := asr.Length(); got != 48 {
+		t.Fatalf("expected 48 hourly asset sets, got %d", got)
+	}
+
+	for i, assetSet := range asr.Assets {
+		if assetSet == nil {
+			t.Fatalf("expected non-nil asset set at index %d", i)
+		}
+
+		expectedStart := start.Add(time.Duration(i) * time.Hour)
+		expectedEnd := expectedStart.Add(time.Hour)
+		if assetSet.Start() != expectedStart {
+			t.Fatalf("bucket %d expected start %s, got %s", i, expectedStart, assetSet.Start())
+		}
+		if assetSet.End() != expectedEnd {
+			t.Fatalf("bucket %d expected end %s, got %s", i, expectedEnd, assetSet.End())
+		}
+	}
+}
+
+func TestQueryAggregatedAssetSetRangeAggregateByName(t *testing.T) {
+	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	asr, err := queryAggregatedAssetSetRange(
+		opencost.NewClosedWindow(start, end),
+		"",
+		"name",
+		opencost.AccumulateOptionDay,
+		mockAssetComputer(map[int64]*opencost.AssetSet{
+			start.Unix(): testAssetSet(start, end, 10, 2, 1),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("queryAggregatedAssetSetRange returned error: %v", err)
+	}
+
+	resp := buildAssetAggregateResponse(asr)
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 response entry, got %d", len(resp))
+	}
+
+	entry := resp[0]
+	assertAssetCost(t, entry, "node", 10)
+	assertAssetCost(t, entry, "disk", 2)
+	assertAssetCost(t, entry, "network", 1)
 }
 
 func mockAssetComputer(sets map[int64]*opencost.AssetSet) assetSetComputer {

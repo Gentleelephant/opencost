@@ -68,7 +68,7 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	asr, err := queryAggregatedAssetSetRange(window, filterString, accumulate, a.Model.ComputeAssets)
+	asr, err := queryAggregatedAssetSetRange(window, filterString, defaultAssetAggregate, accumulate, a.Model.ComputeAssets)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error getting aggregated assets: %s", err), http.StatusInternalServerError)
 		return
@@ -80,10 +80,10 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 // ComputeAssetsGraphHandler returns graph-ready aggregated asset costs.
 // @Summary      查询资产图表数据
 // @Tags         Asset
-// @Description  查询按资产类型聚合的图表数据，目前仅支持 aggregate=type
+// @Description  查询资产图表数据，默认按资产类型聚合，支持单个资产维度如 type、name、cluster、label:<key>
 // @Param        window     query  string  true   "时间窗口，如 today, week, 7d 或 RFC3339 范围"
-// @Param        aggregate  query  string  false  "聚合维度，默认 type"
-// @Param        accumulate query  string  false  "时间粒度，支持 day/week/month，默认 day"
+// @Param        aggregate  query  string  false  "聚合维度，默认 type，支持单个资产维度如 type、name、cluster、label:<key>"
+// @Param        accumulate query  string  false  "时间粒度，支持 hour/day/week/month，默认 day"
 // @Param        filter     query  string  false  "过滤条件"
 // @Param        offset     query  int     false  "图表项偏移量"
 // @Param        limit      query  int     false  "每个时间片返回的最大图表项数量"
@@ -102,16 +102,16 @@ func (a *Accesses) ComputeAssetsGraphHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	aggregate := qp.Get("aggregate", string(opencost.AssetTypeProp))
-	if aggregate != string(opencost.AssetTypeProp) {
-		http.Error(w, fmt.Sprintf("Invalid 'aggregate' parameter: only %q is supported", opencost.AssetTypeProp), http.StatusBadRequest)
+	aggregate, err := normalizeAssetAggregate(qp.Get("aggregate", ""))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'aggregate' parameter: %s", err), http.StatusBadRequest)
 		return
 	}
 
 	accumulateRaw := qp.Get("accumulate", "day")
 	accumulate := opencost.ParseAccumulate(accumulateRaw)
 	switch accumulate {
-	case opencost.AccumulateOptionDay, opencost.AccumulateOptionWeek, opencost.AccumulateOptionMonth:
+	case opencost.AccumulateOptionHour, opencost.AccumulateOptionDay, opencost.AccumulateOptionWeek, opencost.AccumulateOptionMonth:
 	default:
 		http.Error(w, fmt.Sprintf("Invalid 'accumulate' parameter for /assets/graph: %q", accumulateRaw), http.StatusBadRequest)
 		return
@@ -129,7 +129,7 @@ func (a *Accesses) ComputeAssetsGraphHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	asr, err := queryAggregatedAssetSetRange(window, qp.Get("filter", ""), accumulate, a.Model.ComputeAssets)
+	asr, err := queryAggregatedAssetSetRange(window, qp.Get("filter", ""), aggregate, accumulate, a.Model.ComputeAssets)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error getting asset graph data: %s", err), http.StatusInternalServerError)
 		return

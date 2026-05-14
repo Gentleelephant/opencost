@@ -12,6 +12,7 @@ import (
 )
 
 const defaultAssetGraphLimit = 25
+const defaultAssetAggregate = string(opencost.AssetTypeProp)
 
 type assetSetComputer func(start, end time.Time) (*opencost.AssetSet, error)
 
@@ -117,9 +118,38 @@ func computeAssetSetRange(window opencost.Window, step time.Duration, filterStri
 	return asr, nil
 }
 
-func queryAggregatedAssetSetRange(window opencost.Window, filterString string, accumulate opencost.AccumulateOption, compute assetSetComputer) (*opencost.AssetSetRange, error) {
+func normalizeAssetAggregate(aggregate string) (string, error) {
+	if aggregate == "" {
+		return defaultAssetAggregate, nil
+	}
+
+	prop, err := opencost.ParseAssetProperty(aggregate)
+	if err != nil {
+		return "", err
+	}
+
+	return string(prop), nil
+}
+
+func assetQueryStep(accumulate opencost.AccumulateOption) (time.Duration, error) {
+	switch accumulate {
+	case opencost.AccumulateOptionHour:
+		return time.Hour, nil
+	case opencost.AccumulateOptionDay, opencost.AccumulateOptionWeek, opencost.AccumulateOptionMonth, opencost.AccumulateOptionAll:
+		return 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("unsupported accumulate option for asset set range: %s", accumulate)
+	}
+}
+
+func queryAggregatedAssetSetRange(window opencost.Window, filterString, aggregate string, accumulate opencost.AccumulateOption, compute assetSetComputer) (*opencost.AssetSetRange, error) {
 	var asr *opencost.AssetSetRange
 	var err error
+
+	aggregate, err = normalizeAssetAggregate(aggregate)
+	if err != nil {
+		return nil, err
+	}
 
 	switch accumulate {
 	case opencost.AccumulateOptionNone:
@@ -129,7 +159,12 @@ func queryAggregatedAssetSetRange(window opencost.Window, filterString string, a
 		}
 		asr = opencost.NewAssetSetRange(assetSet)
 	default:
-		asr, err = computeAssetSetRange(window, 24*time.Hour, filterString, compute)
+		step, stepErr := assetQueryStep(accumulate)
+		if stepErr != nil {
+			return nil, stepErr
+		}
+
+		asr, err = computeAssetSetRange(window, step, filterString, compute)
 		if err != nil {
 			return nil, err
 		}
@@ -139,8 +174,8 @@ func queryAggregatedAssetSetRange(window opencost.Window, filterString string, a
 		}
 	}
 
-	if err := asr.AggregateBy([]string{string(opencost.AssetTypeProp)}, nil); err != nil {
-		return nil, fmt.Errorf("error aggregating assets by type: %w", err)
+	if err := asr.AggregateBy([]string{aggregate}, nil); err != nil {
+		return nil, fmt.Errorf("error aggregating assets by %s: %w", aggregate, err)
 	}
 
 	return asr, nil
