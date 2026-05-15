@@ -117,7 +117,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[\u003ckey\u003e]、annotation[\u003ckey\u003e]。常用操作：等于 field:\\",
+                        "description": "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[\u003ckey\u003e]、annotation[\u003ckey\u003e]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field\u003c~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=cluster:%22host%22%2Bnamespace:%22default%22、filter=controllerKind:%22deployment%22%2Blabel[app]:%22frontend%22、filter=services~:%22gateway%22。注意：URL 中 + 建议编码为 %2B",
                         "name": "filter",
                         "in": "query"
                     },
@@ -221,7 +221,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[\u003ckey\u003e]、annotation[\u003ckey\u003e]。常用操作：等于 field:\\",
+                        "description": "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[\u003ckey\u003e]、annotation[\u003ckey\u003e]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field\u003c~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=cluster:%22prod%22%2Bnamespace:%22default%22、filter=controllerKind:%22deployment%22%2Blabel[app]:%22api%22。注意：URL 中 + 建议编码为 %2B",
                         "name": "filter",
                         "in": "query"
                     },
@@ -308,6 +308,92 @@
                 }
             }
         },
+        "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation/summary/topline": {
+            "get": {
+                "description": "兼容 Kubecost allocation/summary/topline 的概览接口，返回整个查询窗口的 combined total 摘要。\n适合顶部卡片、总览页和趋势页头部指标。返回结构固定为 numResults + combined.allocations.total。\n当前仅支持 window、aggregate、filter、idle、idleByNode、shareIdle、accumulate、step、resolution。",
+                "tags": [
+                    "Allocation"
+                ],
+                "summary": "查询成本分配 topline 摘要",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "时间窗口。必填。示例：window=7d、window=1d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
+                        "name": "window",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "聚合维度。支持 namespace、cluster、node、controllerKind、controller、pod、container、label:\u003ckey\u003e、annotation:\u003ckey\u003e。示例：aggregate=namespace",
+                        "name": "aggregate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "分配过滤条件。语法与 /allocation 保持一致。示例：filter=cluster:%22host%22%2Bnamespace:%22default%22",
+                        "name": "filter",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prometheus 查询分辨率。默认 1m。示例：resolution=5m",
+                        "name": "resolution",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "查询步长。默认等于整个 window。示例：step=1d",
+                        "name": "step",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "累计粒度。支持：true、all、hour、day、week、month。该接口最终始终返回整个窗口的 combined total，但会按该粒度先组织分配集合。示例：accumulate=day",
+                        "name": "accumulate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否包含 idle 成本。示例：idle=true",
+                        "name": "idle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否按节点级别计算 idle。仅在 idle=true 时有意义。示例：idleByNode=true",
+                        "name": "idleByNode",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否将 idle 成本按规则分摊回工作负载。示例：shareIdle=true",
+                        "name": "shareIdle",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/costmodel.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/kapis/costwise.wiztelemetry.io/v1alpha1/assets": {
             "get": {
                 "description": "查询集群中的原始或聚合资产数据，包括节点、磁盘、网络、负载均衡器等。\n不传 aggregate 时返回单个 AssetSet；传 aggregate=type 时返回按时间聚合后的资产集合列表。\n参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 accumulate 进行时间累积并按 type 聚合。",
@@ -331,7 +417,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。常用操作：等于 field:\\",
+                        "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field\u003c~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=assetType:%22node%22、filter=cluster:%22prod%22%2Bprovider:%22aws%22、filter=label[team]:%22platform%22。注意：URL 中 + 建议编码为 %2B",
                         "name": "filter",
                         "in": "query"
                     },
@@ -393,7 +479,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "资产过滤条件，语法与 /assets、/assets/graph 保持一致。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。示例：filter=assetType:\\",
+                        "description": "资产过滤条件，语法与 /assets、/assets/graph 保持一致。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。示例：filter=assetType:%22node%22、filter=cluster:%22prod%22%2Bprovider:%22aws%22",
                         "name": "filter",
                         "in": "query"
                     }
@@ -422,7 +508,7 @@
         },
         "/kapis/costwise.wiztelemetry.io/v1alpha1/assets/graph": {
             "get": {
-                "description": "查询资产图表数据，返回按时间分桶后的资产成本曲线。\n参数处理顺序为：先按 filter 过滤资产，再按 accumulate 切分时间粒度，再按 aggregate 聚合，最后按成本降序并应用 offset/limit。\n适合资产趋势图、TopN 图表、按集群/类型/标签观察资产成本变化。",
+                "description": "查询资产图表数据，返回按时间分桶后的资产成本曲线。\n参数处理顺序为：先按 filter 过滤资产，再按 accumulate 切分时间粒度，再按 aggregate 聚合，最后按成本降序并应用 offset/limit。\n适合资产趋势图、TopN 图表、按集群/类型/标签观察资产成本变化。\n每个时间片除 items 外，还会返回 totalCost，表示该时间片内所有图表项的总成本，可直接用于计算单项占比。",
                 "tags": [
                     "Asset"
                 ],
@@ -455,7 +541,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。常用操作：等于 field:\\",
+                        "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[\u003ckey\u003e]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field\u003c~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=assetType:%22node%22、filter=provider:%22aws%22%2BassetType:%22disk%22、filter=cluster:%22prod%22%2Blabel[team]:%22platform%22。注意：URL 中 + 建议编码为 %2B，避免被解释为空格",
                         "name": "filter",
                         "in": "query"
                     },
@@ -1146,7 +1232,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:\\",
+                        "description": "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:%22c1%22、filter=cluster:%22c1%22,%22c2%22、filter=cluster:%22prod%22%2Bnamespace:%22default%22",
                         "name": "filter",
                         "in": "query"
                     },
@@ -1208,7 +1294,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:\\",
+                        "description": "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:%22c1%22、filter=cluster:%22c1%22,%22c2%22、filter=cluster:%22prod%22%2Bnamespace:%22default%22",
                         "name": "filter",
                         "in": "query"
                     },

@@ -2163,7 +2163,7 @@ func ParseAggregationProperties(aggregations []string) ([]string, error) {
 // @Description  适合概览卡片、列表页和不需要完整 Allocation 明细的场景。
 // @Description  参数处理顺序为：按 window/resolution/step 生成分配集合，按 aggregate 聚合，按 accumulate 汇总，最后应用 filter。
 // @Param        window                         query  string  true   "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
-// @Param        filter                         query  string  false  "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[<key>]、annotation[<key>]。常用操作：等于 field:\"value\"，不等于 field!:\"value\"，包含 field~:\"value\"，前缀 field<~:\"prefix\"；AND 使用 +，OR 使用 |。示例：filter=cluster:\"prod\"%2Bnamespace:\"default\"、filter=controllerKind:\"deployment\"%2Blabel[app]:\"api\"。注意：URL 中 + 建议编码为 %2B"
+// @Param        filter                         query  string  false  "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[<key>]、annotation[<key>]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field<~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=cluster:%22prod%22%2Bnamespace:%22default%22、filter=controllerKind:%22deployment%22%2Blabel[app]:%22api%22。注意：URL 中 + 建议编码为 %2B"
 // @Param        resolution                     query  string  false  "Prometheus 查询分辨率。默认 1m。窗口较大时可调大以降低查询压力。示例：resolution=5m、resolution=1h"
 // @Param        step                           query  string  false  "返回集合步长。默认等于整个 window，即默认只返回一个时间片。示例：window=7d&step=1d 表示返回 7 个按天切分的摘要集合"
 // @Param        aggregate                      query  string  false  "聚合维度。支持单个或多个字段，逗号分隔。常用值：namespace、pod、container、cluster、node、controllerKind、controller、label:<key>、annotation:<key>。示例：aggregate=namespace、aggregate=cluster,namespace、aggregate=label:team"
@@ -2264,6 +2264,271 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	sasr := opencost.NewSummaryAllocationSetRange(sasl...)
 
 	w.Write(WrapData(sasr.ToResponse(), nil))
+}
+
+type SummaryAllocationToplineResponse struct {
+	NumResults int                                  `json:"numResults"`
+	Combined   *SummaryAllocationSetToplineResponse `json:"combined"`
+}
+
+type SummaryAllocationSetToplineResponse struct {
+	Allocations map[string]*SummaryAllocationToplineItem `json:"allocations"`
+	Window      opencost.Window                          `json:"window"`
+}
+
+type SummaryAllocationToplineItem struct {
+	Name                   string    `json:"name"`
+	Start                  time.Time `json:"start"`
+	End                    time.Time `json:"end"`
+	CPUCoreRequestAverage  float64   `json:"cpuCoreRequestAverage"`
+	CPUCoreUsageAverage    float64   `json:"cpuCoreUsageAverage"`
+	CPUCost                float64   `json:"cpuCost"`
+	CPUCostIdle            float64   `json:"cpuCostIdle"`
+	GPURequestAverage      float64   `json:"gpuRequestAverage"`
+	GPUUsageAverage        float64   `json:"gpuUsageAverage"`
+	GPUCost                float64   `json:"gpuCost"`
+	GPUCostIdle            float64   `json:"gpuCostIdle"`
+	NetworkCost            float64   `json:"networkCost"`
+	LoadBalancerCost       float64   `json:"loadBalancerCost"`
+	PVCost                 float64   `json:"pvCost"`
+	RAMBytesRequestAverage float64   `json:"ramByteRequestAverage"`
+	RAMBytesUsageAverage   float64   `json:"ramByteUsageAverage"`
+	RAMCost                float64   `json:"ramCost"`
+	RAMCostIdle            float64   `json:"ramCostIdle"`
+	SharedCost             float64   `json:"sharedCost"`
+	ExternalCost           float64   `json:"externalCost"`
+	Efficiency             float64   `json:"efficiency"`
+}
+
+// ComputeAllocationHandlerSummaryTopline
+// @Summary      查询成本分配 topline 摘要
+// @Tags         Allocation
+// @Description  兼容 Kubecost allocation/summary/topline 的概览接口，返回整个查询窗口的 combined total 摘要。
+// @Description  适合顶部卡片、总览页和趋势页头部指标。返回结构固定为 numResults + combined.allocations.total。
+// @Description  当前仅支持 window、aggregate、filter、idle、idleByNode、shareIdle、accumulate、step、resolution。
+// @Param        window                     query  string  true   "时间窗口。必填。示例：window=7d、window=1d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
+// @Param        aggregate                  query  string  false  "聚合维度。支持 namespace、cluster、node、controllerKind、controller、pod、container、label:<key>、annotation:<key>。示例：aggregate=namespace"
+// @Param        filter                     query  string  false  "分配过滤条件。语法与 /allocation 保持一致。示例：filter=cluster:%22host%22%2Bnamespace:%22default%22"
+// @Param        resolution                 query  string  false  "Prometheus 查询分辨率。默认 1m。示例：resolution=5m"
+// @Param        step                       query  string  false  "查询步长。默认等于整个 window。示例：step=1d"
+// @Param        accumulate                 query  string  false  "累计粒度。支持：true、all、hour、day、week、month。该接口最终始终返回整个窗口的 combined total，但会按该粒度先组织分配集合。示例：accumulate=day"
+// @Param        idle                       query  bool    false  "是否包含 idle 成本。示例：idle=true"
+// @Param        idleByNode                 query  bool    false  "是否按节点级别计算 idle。仅在 idle=true 时有意义。示例：idleByNode=true"
+// @Param        shareIdle                  query  bool    false  "是否将 idle 成本按规则分摊回工作负载。示例：shareIdle=true"
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/allocation/summary/topline [get]
+func (a *Accesses) ComputeAllocationHandlerSummaryTopline(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+
+	qp := httputil.NewQueryParams(r.URL.Query())
+
+	window, err := opencost.ParseWindowWithOffset(qp.Get("window", ""), env.GetParsedUTCOffset())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'window' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	filter, err := buildSummaryAllocationFilter(qp.Get("filter", ""))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'filter' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	resolution := qp.GetDuration("resolution", env.GetETLResolution())
+	step := qp.GetDuration("step", window.Duration())
+
+	aggregations := qp.GetList("aggregate", ",")
+	aggregateBy, err := ParseAggregationProperties(aggregations)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'aggregate' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	includeIdle := qp.GetBool("idle", qp.GetBool("includeIdle", false))
+	idleByNode := qp.GetBool("idleByNode", false)
+	shareIdle := qp.GetBool("shareIdle", false)
+	accumulateBy := opencost.ParseAccumulate(qp.Get("accumulate", ""))
+
+	asr, err := a.Model.QueryAllocation(window, resolution, step, aggregateBy, includeIdle, idleByNode, false, false, false, accumulateBy, shareIdle)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "bad request") {
+			WriteError(w, BadRequest(err.Error()))
+		} else {
+			WriteError(w, InternalServerError(err.Error()))
+		}
+		return
+	}
+
+	sasl := make([]*opencost.SummaryAllocationSet, 0, len(asr.Allocations))
+	for _, as := range asr.Allocations {
+		sas := opencost.NewSummaryAllocationSet(as, filter, nil, false, false)
+		if sas != nil {
+			sasl = append(sasl, sas)
+		}
+	}
+
+	resp, err := buildSummaryAllocationToplineResponse(opencost.NewSummaryAllocationSetRange(sasl...))
+	if err != nil {
+		WriteError(w, InternalServerError(err.Error()))
+		return
+	}
+
+	w.Write(WrapData(resp, nil))
+}
+
+func buildSummaryAllocationToplineResponse(sasr *opencost.SummaryAllocationSetRange) (*SummaryAllocationToplineResponse, error) {
+	if sasr == nil {
+		return &SummaryAllocationToplineResponse{
+			Combined: &SummaryAllocationSetToplineResponse{
+				Allocations: map[string]*SummaryAllocationToplineItem{},
+				Window:      opencost.NewWindow(nil, nil),
+			},
+		}, nil
+	}
+
+	total, numResults := summarizeSummaryAllocationSetRange(sasr)
+	if total == nil {
+		return &SummaryAllocationToplineResponse{
+			Combined: &SummaryAllocationSetToplineResponse{
+				Allocations: map[string]*SummaryAllocationToplineItem{},
+				Window:      sasr.Window.Clone(),
+			},
+		}, nil
+	}
+
+	allocations := map[string]*SummaryAllocationToplineItem{}
+	allocations["total"] = summaryAllocationToToplineItem(total)
+
+	return &SummaryAllocationToplineResponse{
+		NumResults: numResults,
+		Combined: &SummaryAllocationSetToplineResponse{
+			Allocations: allocations,
+			Window:      sasr.Window.Clone(),
+		},
+	}, nil
+}
+
+func summarizeSummaryAllocationSetRange(sasr *opencost.SummaryAllocationSetRange) (*opencost.SummaryAllocation, int) {
+	if sasr == nil {
+		return nil, 0
+	}
+
+	var total *opencost.SummaryAllocation
+	numResults := 0
+
+	for _, sas := range sasr.SummaryAllocationSets {
+		if sas == nil {
+			continue
+		}
+
+		numResults += len(sas.SummaryAllocations)
+		setTotal := summarizeSummaryAllocationSet(sas)
+		if setTotal == nil {
+			continue
+		}
+
+		if total == nil {
+			total = setTotal
+			total.Name = "total"
+			continue
+		}
+
+		_ = total.Add(setTotal)
+		total.CPUCostIdle += setTotal.CPUCostIdle
+		total.GPUCostIdle += setTotal.GPUCostIdle
+		total.RAMCostIdle += setTotal.RAMCostIdle
+	}
+
+	return total, numResults
+}
+
+func summarizeSummaryAllocationSet(sas *opencost.SummaryAllocationSet) *opencost.SummaryAllocation {
+	if sas == nil {
+		return nil
+	}
+
+	var total *opencost.SummaryAllocation
+	for _, sa := range sas.SummaryAllocations {
+		if sa == nil {
+			continue
+		}
+
+		if total == nil {
+			total = &opencost.SummaryAllocation{
+				Name:                   "total",
+				Start:                  sa.Start,
+				End:                    sa.End,
+				CPUCoreRequestAverage:  sa.CPUCoreRequestAverage,
+				CPUCoreUsageAverage:    sa.CPUCoreUsageAverage,
+				CPUCost:                sa.CPUCost,
+				CPUCostIdle:            sa.CPUCostIdle,
+				GPURequestAverage:      sa.GPURequestAverage,
+				GPUUsageAverage:        sa.GPUUsageAverage,
+				GPUCost:                sa.GPUCost,
+				GPUCostIdle:            sa.GPUCostIdle,
+				NetworkCost:            sa.NetworkCost,
+				LoadBalancerCost:       sa.LoadBalancerCost,
+				PVCost:                 sa.PVCost,
+				RAMBytesRequestAverage: sa.RAMBytesRequestAverage,
+				RAMBytesUsageAverage:   sa.RAMBytesUsageAverage,
+				RAMCost:                sa.RAMCost,
+				RAMCostIdle:            sa.RAMCostIdle,
+				SharedCost:             sa.SharedCost,
+				ExternalCost:           sa.ExternalCost,
+				Efficiency:             sa.Efficiency,
+			}
+			continue
+		}
+
+		_ = total.Add(sa)
+		total.CPUCostIdle += sa.CPUCostIdle
+		total.GPUCostIdle += sa.GPUCostIdle
+		total.RAMCostIdle += sa.RAMCostIdle
+	}
+
+	return total
+}
+
+func summaryAllocationToToplineItem(sa *opencost.SummaryAllocation) *SummaryAllocationToplineItem {
+	if sa == nil {
+		return nil
+	}
+
+	var gpuRequestAverage float64
+	if sa.GPURequestAverage != nil {
+		gpuRequestAverage = *sa.GPURequestAverage
+	}
+
+	var gpuUsageAverage float64
+	if sa.GPUUsageAverage != nil {
+		gpuUsageAverage = *sa.GPUUsageAverage
+	}
+
+	return &SummaryAllocationToplineItem{
+		Name:                   sa.Name,
+		Start:                  sa.Start,
+		End:                    sa.End,
+		CPUCoreRequestAverage:  sa.CPUCoreRequestAverage,
+		CPUCoreUsageAverage:    sa.CPUCoreUsageAverage,
+		CPUCost:                sa.CPUCost,
+		CPUCostIdle:            sa.CPUCostIdle,
+		GPURequestAverage:      gpuRequestAverage,
+		GPUUsageAverage:        gpuUsageAverage,
+		GPUCost:                sa.GPUCost,
+		GPUCostIdle:            sa.GPUCostIdle,
+		NetworkCost:            sa.NetworkCost,
+		LoadBalancerCost:       sa.LoadBalancerCost,
+		PVCost:                 sa.PVCost,
+		RAMBytesRequestAverage: sa.RAMBytesRequestAverage,
+		RAMBytesUsageAverage:   sa.RAMBytesUsageAverage,
+		RAMCost:                sa.RAMCost,
+		RAMCostIdle:            sa.RAMCostIdle,
+		SharedCost:             sa.SharedCost,
+		ExternalCost:           sa.ExternalCost,
+		Efficiency:             sa.Efficiency,
+	}
 }
 
 func buildSummaryAllocationFilter(filterString string) (opencost.AllocationMatcher, error) {
@@ -2371,7 +2636,7 @@ func isAllocationFilterExprStart(ch byte) bool {
 // @Description  同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。
 // @Description  filter 语法与 allocation/summary 保持一致，常用于限制集群范围。
 // @Param        window      query  string  true   "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d"
-// @Param        filter      query  string  false  "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:\"c1\"、filter=cluster:\"c1\",\"c2\"、filter=cluster:\"prod\"%2Bnamespace:\"default\""
+// @Param        filter      query  string  false  "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:%22c1%22、filter=cluster:%22c1%22,%22c2%22、filter=cluster:%22prod%22%2Bnamespace:%22default%22"
 // @Param        resolution  query  string  false  "Prometheus 查询分辨率。默认 1m。示例：resolution=5m"
 // @Param        step        query  string  false  "返回集合步长。默认等于 window。示例：window=7d&step=1d"
 // @Param        accumulate  query  bool    false  "是否将多个时间片累加为一个结果。默认 false。示例：accumulate=true"
@@ -2446,7 +2711,7 @@ func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.Respo
 // @Description  适合成本明细页、资源使用分析、按命名空间/工作负载钻取。
 // @Description  参数处理顺序为：先按 window/resolution/step 生成分配集合，再按 aggregate 聚合，再按 accumulate/accumulateBy 汇总，最后应用 filter。
 // @Param        window                                  query  string  true   "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
-// @Param        filter                                  query  string  false  "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[<key>]、annotation[<key>]。常用操作：等于 field:\"value\"，不等于 field!:\"value\"，包含 field~:\"value\"，前缀 field<~:\"prefix\"；AND 使用 +，OR 使用 |。示例：filter=cluster:\"host\"%2Bnamespace:\"default\"、filter=controllerKind:\"deployment\"%2Blabel[app]:\"frontend\"、filter=services~:\"gateway\"。注意：URL 中 + 建议编码为 %2B"
+// @Param        filter                                  query  string  false  "分配过滤条件，使用声明式过滤语法。支持字段：cluster、node、namespace、controllerKind、controllerName、pod、container、provider、services、label[<key>]、annotation[<key>]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field<~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=cluster:%22host%22%2Bnamespace:%22default%22、filter=controllerKind:%22deployment%22%2Blabel[app]:%22frontend%22、filter=services~:%22gateway%22。注意：URL 中 + 建议编码为 %2B"
 // @Param        resolution                              query  string  false  "Prometheus 查询分辨率。默认 1m。窗口较大时可适当调大。示例：resolution=5m、resolution=1h"
 // @Param        step                                    query  string  false  "返回集合步长。默认等于整个 window。示例：window=7d&step=1d 表示返回 7 个按天切分的 AllocationSet"
 // @Param        aggregate                               query  string  false  "聚合维度。支持单个或多个字段，逗号分隔。常用值：namespace、pod、container、cluster、node、controllerKind、controller、label:<key>、annotation:<key>。示例：aggregate=deployment、aggregate=cluster,namespace、aggregate=label:team"
