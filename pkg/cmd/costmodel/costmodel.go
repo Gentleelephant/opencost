@@ -63,6 +63,7 @@ func Execute(opts *CostModelOpts) error {
 		if env.IsCarbonEstimatesEnabled() {
 			router.GET(costmodel.RoutePrefix+"/assets/carbon", a.ComputeAssetsCarbonHandler)
 		}
+		registerOpenCostUICompatibilityRoutes(router, a)
 
 		// set cloud provider for cloud cost
 		cp = a.CloudProvider
@@ -109,6 +110,26 @@ func Execute(opts *CostModelOpts) error {
 	handler := cors.AllowAll().Handler(telemetryHandler)
 
 	return http.ListenAndServe(fmt.Sprint(":", env.GetAPIPort()), errors.PanicHandlerMiddleware(handler))
+}
+
+func registerOpenCostUICompatibilityRoutes(router *httprouter.Router, a *costmodel.Accesses) {
+	// The bundled/upstream OpenCost UI requests legacy root-relative API paths.
+	// Keep the CostWize-prefixed API as canonical while accepting UI aliases.
+	router.GET("/allocation", a.ComputeAllocationHandler)
+	router.GET("/allocation/compute", a.ComputeAllocationHandler)
+	router.GET("/allocation/summary", a.ComputeAllocationHandlerSummary)
+	router.GET("/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
+	router.GET("/allocation/summary/topline", a.ComputeAllocationHandlerSummaryTopline)
+	router.GET("/efficiency/clusters", a.ComputeAllocationHandlerClusterEfficiencySummary)
+	router.GET("/assets", a.ComputeAssetsHandler)
+	router.GET("/assets/graph", a.ComputeAssetsGraphHandler)
+	if env.IsCarbonEstimatesEnabled() {
+		router.GET("/assets/carbon", a.ComputeAssetsCarbonHandler)
+	}
+	router.GET("/clusterInfo", a.ClusterInfo)
+	router.GET("/clusterInfoMap", a.GetClusterInfoMap)
+	router.GET("/managementPlatform", a.ManagementPlatform)
+	router.GET("/status", a.Status)
 }
 
 func StartExportWorker(ctx context.Context, model costmodel.AllocationModel) error {
