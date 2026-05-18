@@ -2644,7 +2644,6 @@ func isAllocationFilterExprStart(ch byte) bool {
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
 // @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters [get]
-// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters/summary [get]
 func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 

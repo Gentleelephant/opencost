@@ -1283,68 +1283,6 @@
                 }
             }
         },
-        "/kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters/summary": {
-            "get": {
-                "description": "查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。\n同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。\nfilter 语法与 allocation/summary 保持一致，常用于限制集群范围。",
-                "tags": [
-                    "Allocation"
-                ],
-                "summary": "查询集群效率摘要数据 + 每资源类型 allocation/usage/idle 拆分",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d",
-                        "name": "window",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:%22c1%22、filter=cluster:%22c1%22,%22c2%22、filter=cluster:%22prod%22%2Bnamespace:%22default%22",
-                        "name": "filter",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Prometheus 查询分辨率。默认 1m。示例：resolution=5m",
-                        "name": "resolution",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "返回集合步长。默认等于 window。示例：window=7d\u0026step=1d",
-                        "name": "step",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "是否将多个时间片累加为一个结果。默认 false。示例：accumulate=true",
-                        "name": "accumulate",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/costmodel.Response"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/costmodel.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/costmodel.Response"
-                        }
-                    }
-                }
-            }
-        },
         "/kapis/costwise.wiztelemetry.io/v1alpha1/helmValues": {
             "get": {
                 "description": "获取部署时使用的 Helm values 配置",
