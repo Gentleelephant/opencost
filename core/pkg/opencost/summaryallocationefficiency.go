@@ -14,22 +14,23 @@ type ResourceCostBreakdown struct {
 }
 
 type ClusterEfficiency struct {
-	Name               string                   `json:"name"`
-	Start              time.Time                `json:"start"`
-	End                time.Time                `json:"end"`
-	CPUEfficiency      float64                  `json:"cpuEfficiency"`
-	RAMEfficiency      float64                  `json:"ramEfficiency"`
-	GPUEfficiency      float64                  `json:"gpuEfficiency"`
-	TotalUsageCost     float64                  `json:"totalUsageCost"`
-	WorkloadIdleCost   float64                  `json:"workloadIdleCost"`
-	InfraIdleCost      float64                  `json:"infraIdleCost"`
-	TotalIdleCost      float64                  `json:"totalIdleCost"`
-	TotalAllocationCost float64                 `json:"totalAllocationCost"`
-	Efficiency         float64                  `json:"efficiency"`
-	CPU                *ResourceCostBreakdown   `json:"cpu,omitempty"`
-	RAM                *ResourceCostBreakdown   `json:"ram,omitempty"`
-	GPU                *ResourceCostBreakdown   `json:"gpu,omitempty"`
-	PV                 *ResourceCostBreakdown   `json:"pv,omitempty"`
+	Name                   string                 `json:"name"`
+	Start                  time.Time              `json:"start"`
+	End                    time.Time              `json:"end"`
+	CPUEfficiency          float64                `json:"cpuEfficiency"`
+	RAMEfficiency          float64                `json:"ramEfficiency"`
+	GPUEfficiency          float64                `json:"gpuEfficiency"`
+	TotalUsageCost         float64                `json:"totalUsageCost"`
+	WorkloadAllocationCost float64                `json:"workloadAllocationCost"`
+	WorkloadIdleCost       float64                `json:"workloadIdleCost"`
+	InfraIdleCost          float64                `json:"infraIdleCost"`
+	TotalIdleCost          float64                `json:"totalIdleCost"`
+	TotalAllocationCost    float64                `json:"totalAllocationCost"`
+	Efficiency             float64                `json:"efficiency"`
+	CPU                    *ResourceCostBreakdown `json:"cpu,omitempty"`
+	RAM                    *ResourceCostBreakdown `json:"ram,omitempty"`
+	GPU                    *ResourceCostBreakdown `json:"gpu,omitempty"`
+	PV                     *ResourceCostBreakdown `json:"pv,omitempty"`
 }
 
 type ClusterEfficiencySet struct {
@@ -92,56 +93,16 @@ func (sa *SummaryAllocation) ClusterGPUEfficiency() float64 {
 	return pageEfficiency(ptrFloat64Value(sa.GPUUsageAverage), ptrFloat64Value(sa.GPURequestAverage), sa.GPUCost)
 }
 
-func (sa *SummaryAllocation) ClusterEfficiencyUsageCost() float64 {
-	if sa == nil || sa.IsIdle() {
-		return 0.0
-	}
-
-	return sa.ClusterCPUEfficiency()*(sa.CPUCost-sa.CPUCostIdle) +
-		sa.ClusterRAMEfficiency()*(sa.RAMCost-sa.RAMCostIdle) +
-		sa.ClusterGPUEfficiency()*(sa.GPUCost-sa.GPUCostIdle)
+func workloadAllocationCost(cost, embeddedIdle float64) float64 {
+	return math.Max(0.0, cost-embeddedIdle)
 }
 
-func (sa *SummaryAllocation) ClusterEfficiencyWorkloadIdleCost() float64 {
-	if sa == nil || sa.IsIdle() {
-		return 0.0
-	}
-
-	return (1.0-sa.ClusterCPUEfficiency())*(sa.CPUCost-sa.CPUCostIdle) +
-		(1.0-sa.ClusterRAMEfficiency())*(sa.RAMCost-sa.RAMCostIdle) +
-		(1.0-sa.ClusterGPUEfficiency())*(sa.GPUCost-sa.GPUCostIdle)
-}
-
-func (sa *SummaryAllocation) ClusterEfficiencyInfraIdleCost() float64 {
-	if sa == nil || sa.IsIdle() {
-		return 0.0
-	}
-
-	return sa.CPUCostIdle + sa.RAMCostIdle + sa.GPUCostIdle
-}
-
-func (sa *SummaryAllocation) ClusterEfficiencyTotalIdleCost() float64 {
-	if sa == nil || sa.IsIdle() {
-		return 0.0
-	}
-
-	return sa.ClusterEfficiencyWorkloadIdleCost() + sa.ClusterEfficiencyInfraIdleCost()
-}
-
-func (sa *SummaryAllocation) ClusterEfficiencyResourceCost() float64 {
-	if sa == nil || sa.IsIdle() {
-		return 0.0
-	}
-
-	return sa.CPUCost + sa.RAMCost + sa.GPUCost
-}
-
-func resourceBreakdown(cost, costIdle, efficiency float64) *ResourceCostBreakdown {
-	usage := efficiency * (cost - costIdle)
+func resourceBreakdown(totalAllocation, workloadAllocation, efficiency float64) *ResourceCostBreakdown {
+	usage := efficiency * workloadAllocation
 	return &ResourceCostBreakdown{
-		Allocation: cost,
+		Allocation: totalAllocation,
 		Usage:      usage,
-		Idle:       cost - usage,
+		Idle:       totalAllocation - usage,
 		Efficiency: efficiency,
 	}
 }
@@ -155,38 +116,43 @@ func (sa *SummaryAllocation) ClusterEfficiencyMetric() *ClusterEfficiency {
 	ramEff := sa.ClusterRAMEfficiency()
 	gpuEff := sa.ClusterGPUEfficiency()
 
-	totalUsageCost := sa.ClusterEfficiencyUsageCost()
-	workloadIdleCost := sa.ClusterEfficiencyWorkloadIdleCost()
-	infraIdleCost := sa.ClusterEfficiencyInfraIdleCost()
-	totalAllocationCost := sa.ClusterEfficiencyResourceCost()
+	workloadCPUCost := workloadAllocationCost(sa.CPUCost, sa.CPUCostIdle)
+	workloadRAMCost := workloadAllocationCost(sa.RAMCost, sa.RAMCostIdle)
+	workloadGPUCost := workloadAllocationCost(sa.GPUCost, sa.GPUCostIdle)
+	workloadAllocationCost := workloadCPUCost + workloadRAMCost + workloadGPUCost
+	totalUsageCost := cpuEff*workloadCPUCost + ramEff*workloadRAMCost + gpuEff*workloadGPUCost
+	workloadIdleCost := workloadAllocationCost - totalUsageCost
+	infraIdleCost := sa.CPUCostIdle + sa.RAMCostIdle + sa.GPUCostIdle
+	totalAllocationCost := workloadAllocationCost + infraIdleCost
 	efficiency := 0.0
 	if totalAllocationCost > 0 {
-		efficiency = totalUsageCost / totalAllocationCost
+		efficiency = workloadAllocationCost / totalAllocationCost
 	}
 
 	// PV breakdown: storage is capacity-billed, no usage model
 	var pvBreakdown *ResourceCostBreakdown
 	if sa.PVCost > 0 {
-		pvBreakdown = resourceBreakdown(sa.PVCost, 0, 1.0)
+		pvBreakdown = resourceBreakdown(sa.PVCost, sa.PVCost, 1.0)
 	}
 
 	return &ClusterEfficiency{
-		Name:                sa.Name,
-		Start:               sa.Start,
-		End:                 sa.End,
-		CPUEfficiency:       cpuEff,
-		RAMEfficiency:       ramEff,
-		GPUEfficiency:       gpuEff,
-		TotalUsageCost:      totalUsageCost,
-		WorkloadIdleCost:    workloadIdleCost,
-		InfraIdleCost:       infraIdleCost,
-		TotalIdleCost:       workloadIdleCost + infraIdleCost,
-		TotalAllocationCost: totalAllocationCost,
-		Efficiency:          efficiency,
-		CPU:                 resourceBreakdown(sa.CPUCost, sa.CPUCostIdle, cpuEff),
-		RAM:                 resourceBreakdown(sa.RAMCost, sa.RAMCostIdle, ramEff),
-		GPU:                 resourceBreakdown(sa.GPUCost, sa.GPUCostIdle, gpuEff),
-		PV:                  pvBreakdown,
+		Name:                   sa.Name,
+		Start:                  sa.Start,
+		End:                    sa.End,
+		CPUEfficiency:          cpuEff,
+		RAMEfficiency:          ramEff,
+		GPUEfficiency:          gpuEff,
+		TotalUsageCost:         totalUsageCost,
+		WorkloadAllocationCost: workloadAllocationCost,
+		WorkloadIdleCost:       workloadIdleCost,
+		InfraIdleCost:          infraIdleCost,
+		TotalIdleCost:          workloadIdleCost + infraIdleCost,
+		TotalAllocationCost:    totalAllocationCost,
+		Efficiency:             efficiency,
+		CPU:                    resourceBreakdown(sa.CPUCost, workloadCPUCost, cpuEff),
+		RAM:                    resourceBreakdown(sa.RAMCost, workloadRAMCost, ramEff),
+		GPU:                    resourceBreakdown(sa.GPUCost, workloadGPUCost, gpuEff),
+		PV:                     pvBreakdown,
 	}
 }
 
@@ -195,8 +161,11 @@ func (sas *SummaryAllocationSet) ClusterEfficiencySet() *ClusterEfficiencySet {
 		return nil
 	}
 
+	workloadByCluster := make(map[string]*SummaryAllocation, len(sas.SummaryAllocations))
+	idleByCluster := make(map[string]*SummaryAllocation, len(sas.SummaryAllocations))
 	clusters := make(map[string]*ClusterEfficiency, len(sas.SummaryAllocations))
 	totalUsageCost := 0.0
+	totalWorkloadAllocationCost := 0.0
 	totalWorkloadIdleCost := 0.0
 	totalInfraIdleCost := 0.0
 	totalAllocationCost := 0.0
@@ -207,14 +176,64 @@ func (sas *SummaryAllocationSet) ClusterEfficiencySet() *ClusterEfficiencySet {
 	gpuAlloc, gpuUsage, gpuIdle := 0.0, 0.0, 0.0
 	pvAlloc, pvUsage, pvIdle := 0.0, 0.0, 0.0
 
-	for name, sa := range sas.SummaryAllocations {
-		if sa == nil || sa.IsIdle() || sa.IsExternal() || sa.IsUnallocated() || sa.IsUnmounted() {
+	for _, sa := range sas.SummaryAllocations {
+		if sa == nil || sa.IsExternal() || sa.IsUnallocated() || sa.IsUnmounted() {
 			continue
 		}
 
-		metric := sa.ClusterEfficiencyMetric()
-		clusters[name] = metric
+		cluster := sa.Name
+		if sa.Properties != nil && sa.Properties.Cluster != "" {
+			cluster = sa.Properties.Cluster
+		}
+		if cluster == "" {
+			cluster = sa.Name
+		}
+
+		target := workloadByCluster
+		if sa.IsIdle() {
+			target = idleByCluster
+		}
+
+		if existing, ok := target[cluster]; ok {
+			_ = existing.Add(sa)
+			existing.CPUCostIdle += sa.CPUCostIdle
+			existing.GPUCostIdle += sa.GPUCostIdle
+			existing.RAMCostIdle += sa.RAMCostIdle
+		} else {
+			target[cluster] = sa.Clone()
+		}
+	}
+
+	for cluster, workload := range workloadByCluster {
+		idle := idleByCluster[cluster]
+		metric := workload.ClusterEfficiencyMetric()
+		if idle != nil {
+			metric.Name = cluster
+			metric.Start = workload.Start
+			metric.End = workload.End
+			metric.InfraIdleCost += idle.CPUCost + idle.RAMCost + idle.GPUCost
+			metric.TotalIdleCost = metric.WorkloadIdleCost + metric.InfraIdleCost
+			metric.TotalAllocationCost += idle.CPUCost + idle.RAMCost + idle.GPUCost
+			if metric.TotalAllocationCost > 0 {
+				metric.Efficiency = metric.WorkloadAllocationCost / metric.TotalAllocationCost
+			}
+			if metric.CPU != nil {
+				metric.CPU.Allocation += idle.CPUCost
+				metric.CPU.Idle += idle.CPUCost
+			}
+			if metric.RAM != nil {
+				metric.RAM.Allocation += idle.RAMCost
+				metric.RAM.Idle += idle.RAMCost
+			}
+			if metric.GPU != nil {
+				metric.GPU.Allocation += idle.GPUCost
+				metric.GPU.Idle += idle.GPUCost
+			}
+		}
+
+		clusters[cluster] = metric
 		totalUsageCost += metric.TotalUsageCost
+		totalWorkloadAllocationCost += metric.WorkloadAllocationCost
 		totalWorkloadIdleCost += metric.WorkloadIdleCost
 		totalInfraIdleCost += metric.InfraIdleCost
 		totalAllocationCost += metric.TotalAllocationCost
@@ -241,6 +260,47 @@ func (sas *SummaryAllocationSet) ClusterEfficiencySet() *ClusterEfficiencySet {
 		}
 	}
 
+	for cluster, idle := range idleByCluster {
+		if _, ok := clusters[cluster]; ok {
+			continue
+		}
+
+		metric := &ClusterEfficiency{
+			Name:                   cluster,
+			Start:                  idle.Start,
+			End:                    idle.End,
+			WorkloadAllocationCost: 0.0,
+			WorkloadIdleCost:       0.0,
+			InfraIdleCost:          idle.CPUCost + idle.RAMCost + idle.GPUCost,
+			TotalIdleCost:          idle.CPUCost + idle.RAMCost + idle.GPUCost,
+			TotalAllocationCost:    idle.CPUCost + idle.RAMCost + idle.GPUCost,
+			Efficiency:             0.0,
+			CPU:                    resourceBreakdown(idle.CPUCost, 0.0, 0.0),
+			RAM:                    resourceBreakdown(idle.RAMCost, 0.0, 0.0),
+			GPU:                    resourceBreakdown(idle.GPUCost, 0.0, 0.0),
+		}
+
+		clusters[cluster] = metric
+		totalInfraIdleCost += metric.InfraIdleCost
+		totalAllocationCost += metric.TotalAllocationCost
+
+		if metric.CPU != nil {
+			cpuAlloc += metric.CPU.Allocation
+			cpuUsage += metric.CPU.Usage
+			cpuIdle += metric.CPU.Idle
+		}
+		if metric.RAM != nil {
+			ramAlloc += metric.RAM.Allocation
+			ramUsage += metric.RAM.Usage
+			ramIdle += metric.RAM.Idle
+		}
+		if metric.GPU != nil {
+			gpuAlloc += metric.GPU.Allocation
+			gpuUsage += metric.GPU.Usage
+			gpuIdle += metric.GPU.Idle
+		}
+	}
+
 	summaryCPU := &ResourceCostBreakdown{Allocation: cpuAlloc, Usage: cpuUsage, Idle: cpuIdle}
 	if cpuAlloc > 0 {
 		summaryCPU.Efficiency = cpuUsage / cpuAlloc
@@ -259,19 +319,20 @@ func (sas *SummaryAllocationSet) ClusterEfficiencySet() *ClusterEfficiencySet {
 	}
 
 	summary := &ClusterEfficiency{
-		Name:                "summary",
-		TotalUsageCost:      totalUsageCost,
-		WorkloadIdleCost:    totalWorkloadIdleCost,
-		InfraIdleCost:       totalInfraIdleCost,
-		TotalIdleCost:       totalWorkloadIdleCost + totalInfraIdleCost,
-		TotalAllocationCost: totalAllocationCost,
-		CPU:                 summaryCPU,
-		RAM:                 summaryRAM,
-		GPU:                 summaryGPU,
-		PV:                  summaryPV,
+		Name:                   "summary",
+		TotalUsageCost:         totalUsageCost,
+		WorkloadAllocationCost: totalWorkloadAllocationCost,
+		WorkloadIdleCost:       totalWorkloadIdleCost,
+		InfraIdleCost:          totalInfraIdleCost,
+		TotalIdleCost:          totalWorkloadIdleCost + totalInfraIdleCost,
+		TotalAllocationCost:    totalAllocationCost,
+		CPU:                    summaryCPU,
+		RAM:                    summaryRAM,
+		GPU:                    summaryGPU,
+		PV:                     summaryPV,
 	}
 	if totalAllocationCost > 0 {
-		summary.Efficiency = totalUsageCost / totalAllocationCost
+		summary.Efficiency = totalWorkloadAllocationCost / totalAllocationCost
 	}
 
 	if sas.Window.Start() != nil {

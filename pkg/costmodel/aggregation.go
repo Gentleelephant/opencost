@@ -2633,7 +2633,8 @@ func isAllocationFilterExprStart(ch byte) bool {
 // @Summary      查询集群效率摘要数据 + 每资源类型 allocation/usage/idle 拆分
 // @Tags         Allocation
 // @Description  查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。
-// @Description  同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。
+// @Description  顶层 efficiency 按 OpenCost 风格口径计算：workloadAllocationCost / totalAllocationCost。
+// @Description  同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分；其中 cpuEfficiency/ramEfficiency/gpuEfficiency 仍表示 usage/request 利用率。
 // @Description  filter 语法与 allocation/summary 保持一致，常用于限制集群范围。
 // @Param        window      query  string  true   "时间窗口。必填。支持 today、week、month、30m、12h、7d 或 RFC3339 范围。示例：window=1d、window=7d"
 // @Param        filter      query  string  false  "分配过滤条件。通常按 cluster 过滤，也可组合 namespace 等字段。示例：filter=cluster:%22c1%22、filter=cluster:%22c1%22,%22c2%22、filter=cluster:%22prod%22%2Bnamespace:%22default%22"
@@ -2658,29 +2659,15 @@ func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.Respo
 	step := qp.GetDuration("step", window.Duration())
 	resolution := qp.GetDuration("resolution", env.GetETLResolution())
 	accumulate := qp.GetBool("accumulate", false)
-
-	asr := opencost.NewAllocationSetRange()
-	stepStart := *window.Start()
-	for window.End().After(stepStart) {
-		stepEnd := stepStart.Add(step)
-		stepWindow := opencost.NewWindow(&stepStart, &stepEnd)
-
-		as, err := a.Model.ComputeAllocation(*stepWindow.Start(), *stepWindow.End(), resolution)
-		if err != nil {
-			WriteError(w, InternalServerError(err.Error()))
-			return
-		}
-		asr.Append(as)
-
-		stepStart = stepEnd
+	accumulateBy := opencost.AccumulateOptionNone
+	if accumulate {
+		accumulateBy = opencost.AccumulateOptionAll
 	}
 
-	if accumulate {
-		asr, err = asr.Accumulate(opencost.AccumulateOptionAll)
-		if err != nil {
-			WriteError(w, InternalServerError(err.Error()))
-			return
-		}
+	asr, err := a.Model.QueryAllocation(window, resolution, step, nil, true, false, false, false, false, accumulateBy, false)
+	if err != nil {
+		WriteError(w, InternalServerError(err.Error()))
+		return
 	}
 
 	filter, err := buildSummaryAllocationFilter(qp.Get("filter", ""))
@@ -2692,7 +2679,10 @@ func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.Respo
 	sasl := make([]*opencost.SummaryAllocationSet, 0, len(asr.Slice()))
 	for _, as := range asr.Slice() {
 		sas := opencost.NewSummaryAllocationSet(as, filter, nil, false, false)
-		if err := sas.AggregateBy([]string{opencost.AllocationClusterProp}, nil); err != nil {
+		if err := sas.AggregateBy([]string{opencost.AllocationClusterProp}, &opencost.AllocationAggregationOptions{
+			ShareIdle: opencost.ShareNone,
+			SplitIdle: true,
+		}); err != nil {
 			WriteError(w, InternalServerError(err.Error()))
 			return
 		}

@@ -16,33 +16,31 @@ func TestSummaryAllocationClusterEfficiencyMetric(t *testing.T) {
 	start := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
 	end := start.Add(7 * 24 * time.Hour)
 
-	t.Run("zero usage yields zero efficiency", func(t *testing.T) {
+	t.Run("top level efficiency uses workload allocation cost", func(t *testing.T) {
 		sa := &SummaryAllocation{
-			Name:                   "cluster-a",
-			Start:                  start,
-			End:                    end,
-			CPUCoreRequestAverage:  2.0,
-			CPUCoreUsageAverage:    0.0,
-			CPUCost:                8.830006,
-			CPUCostIdle:            6.495767413178405,
-			RAMBytesRequestAverage: 1415334686.6409266,
-			RAMBytesUsageAverage:   0.0,
-			RAMCost:                4.637674110801063,
-			RAMCostIdle:            4.342702102988111,
+			Name:                  "cluster-a",
+			Start:                 start,
+			End:                   end,
+			CPUCoreRequestAverage: 2.0,
+			CPUCoreUsageAverage:   1.0,
+			CPUCost:               100.0,
 		}
 
 		metric := sa.ClusterEfficiencyMetric()
-		if metric.Efficiency != 0.0 {
-			t.Fatalf("expected zero efficiency, got %f", metric.Efficiency)
+		if !approximatelyWithin(metric.Efficiency, 1.0, 0.0001) {
+			t.Fatalf("expected efficiency 1.0 without cluster idle, got %f", metric.Efficiency)
 		}
-		if metric.TotalUsageCost != 0.0 {
-			t.Fatalf("expected zero usage cost, got %f", metric.TotalUsageCost)
+		if !approximatelyWithin(metric.TotalUsageCost, 50.0, 0.0001) {
+			t.Fatalf("expected usage cost 50, got %f", metric.TotalUsageCost)
 		}
-		if metric.WorkloadIdleCost <= 0.0 {
-			t.Fatalf("expected positive workload idle cost, got %f", metric.WorkloadIdleCost)
+		if !approximatelyWithin(metric.WorkloadAllocationCost, 100.0, 0.0001) {
+			t.Fatalf("expected workload allocation cost 100, got %f", metric.WorkloadAllocationCost)
 		}
-		if metric.InfraIdleCost <= 0.0 {
-			t.Fatalf("expected positive infra idle cost, got %f", metric.InfraIdleCost)
+		if !approximatelyWithin(metric.WorkloadIdleCost, 50.0, 0.0001) {
+			t.Fatalf("expected workload idle cost 50, got %f", metric.WorkloadIdleCost)
+		}
+		if metric.InfraIdleCost != 0.0 {
+			t.Fatalf("expected zero infra idle cost, got %f", metric.InfraIdleCost)
 		}
 	})
 
@@ -88,51 +86,44 @@ func TestSummaryAllocationSetClusterEfficiencySet(t *testing.T) {
 	window := NewWindow(&start, &end)
 
 	clusterA := &SummaryAllocation{
-		Name:                   "17-4",
-		Properties:             &AllocationProperties{Cluster: "17-4"},
-		Start:                  start,
-		End:                    end,
-		CPUCoreRequestAverage:  1.7077876447876446,
-		CPUCoreUsageAverage:    0,
-		CPUCost:                8.830006,
-		CPUCostIdle:            6.495767413178405,
-		GPUCost:                0,
-		GPUCostIdle:            0,
-		RAMBytesRequestAverage: 1415334686.6409266,
-		RAMBytesUsageAverage:   0,
-		RAMCost:                4.637674110801063,
-		RAMCostIdle:            4.342702102988111,
+		Name:                  "cluster-a",
+		Properties:            &AllocationProperties{Cluster: "cluster-a"},
+		Start:                 start,
+		End:                   end,
+		CPUCoreRequestAverage: 10.0,
+		CPUCoreUsageAverage:   5.0,
+		CPUCost:               100.0,
 	}
-	clusterB := &SummaryAllocation{
-		Name:                   "host",
-		Properties:             &AllocationProperties{Cluster: "host"},
-		Start:                  start,
-		End:                    end,
-		CPUCoreRequestAverage:  8.26166684782608,
-		CPUCoreUsageAverage:    1.1137765060294857,
-		CPUCost:                22.138237000000025,
-		CPUCostIdle:            10.12086959154716,
-		GPUCost:                0,
-		GPUCostIdle:            0,
-		RAMBytesRequestAverage: 13552446556.011595,
-		RAMBytesUsageAverage:   16526074005.725855,
-		RAMCost:                9.934497107522029,
-		RAMCostIdle:            7.470667742561745,
-	}
-	idle := &SummaryAllocation{
-		Name:       "host/__idle__",
-		Properties: &AllocationProperties{Cluster: "host"},
+	clusterAIdle := &SummaryAllocation{
+		Name:       "cluster-a/__idle__",
+		Properties: &AllocationProperties{Cluster: "cluster-a"},
 		Start:      start,
 		End:        end,
-		CPUCost:    5.0,
-		RAMCost:    3.0,
+		CPUCost:    20.0,
+	}
+	clusterB := &SummaryAllocation{
+		Name:                  "cluster-b",
+		Properties:            &AllocationProperties{Cluster: "cluster-b"},
+		Start:                 start,
+		End:                   end,
+		CPUCoreRequestAverage: 10.0,
+		CPUCoreUsageAverage:   10.0,
+		CPUCost:               10.0,
+	}
+	clusterBIdle := &SummaryAllocation{
+		Name:       "cluster-b/__idle__",
+		Properties: &AllocationProperties{Cluster: "cluster-b"},
+		Start:      start,
+		End:        end,
+		CPUCost:    90.0,
 	}
 
 	sas := &SummaryAllocationSet{
 		SummaryAllocations: map[string]*SummaryAllocation{
-			clusterA.Name: clusterA,
-			clusterB.Name: clusterB,
-			idle.Name:     idle,
+			clusterA.Name:     clusterA,
+			clusterAIdle.Name: clusterAIdle,
+			clusterB.Name:     clusterB,
+			clusterBIdle.Name: clusterBIdle,
 		},
 		Window: window,
 	}
@@ -143,56 +134,59 @@ func TestSummaryAllocationSetClusterEfficiencySet(t *testing.T) {
 		t.Fatalf("expected 2 clusters, got %d", len(ces.Clusters))
 	}
 
-	host := ces.Clusters["host"]
-	if host == nil {
-		t.Fatalf("expected host cluster in response")
+	clusterAMetric := ces.Clusters["cluster-a"]
+	if clusterAMetric == nil {
+		t.Fatalf("expected cluster-a in response")
 	}
 
-	if !util.IsApproximately(host.CPUEfficiency, 0.1348125658592198) {
-		t.Fatalf("unexpected host cpu efficiency: %f", host.CPUEfficiency)
+	if !util.IsApproximately(clusterAMetric.CPUEfficiency, 0.5) {
+		t.Fatalf("unexpected cluster-a cpu efficiency: %f", clusterAMetric.CPUEfficiency)
 	}
-	if !util.IsApproximately(host.RAMEfficiency, 1.0) {
-		t.Fatalf("unexpected host ram efficiency: %f", host.RAMEfficiency)
+	if !approximatelyWithin(clusterAMetric.TotalUsageCost, 50.0, 0.001) {
+		t.Fatalf("unexpected cluster-a usage cost: %f", clusterAMetric.TotalUsageCost)
 	}
-	if !approximatelyWithin(host.TotalUsageCost, 4.084035616675961, 0.001) {
-		t.Fatalf("unexpected host usage cost: %f", host.TotalUsageCost)
+	if !approximatelyWithin(clusterAMetric.WorkloadAllocationCost, 100.0, 0.001) {
+		t.Fatalf("unexpected cluster-a workload allocation cost: %f", clusterAMetric.WorkloadAllocationCost)
 	}
-	if !approximatelyWithin(host.WorkloadIdleCost, 10.39727527324637, 0.001) {
-		t.Fatalf("unexpected host workload idle cost: %f", host.WorkloadIdleCost)
+	if !approximatelyWithin(clusterAMetric.WorkloadIdleCost, 50.0, 0.001) {
+		t.Fatalf("unexpected cluster-a workload idle cost: %f", clusterAMetric.WorkloadIdleCost)
 	}
-	if !approximatelyWithin(host.InfraIdleCost, 17.591537334108904, 0.001) {
-		t.Fatalf("unexpected host infra idle cost: %f", host.InfraIdleCost)
+	if !approximatelyWithin(clusterAMetric.InfraIdleCost, 20.0, 0.001) {
+		t.Fatalf("unexpected cluster-a infra idle cost: %f", clusterAMetric.InfraIdleCost)
 	}
-	if !approximatelyWithin(host.TotalIdleCost, 27.988812607355278, 0.001) {
-		t.Fatalf("unexpected host total idle cost: %f", host.TotalIdleCost)
+	if !approximatelyWithin(clusterAMetric.TotalIdleCost, 70.0, 0.001) {
+		t.Fatalf("unexpected cluster-a total idle cost: %f", clusterAMetric.TotalIdleCost)
 	}
-	if !util.IsApproximately(host.TotalAllocationCost, 32.07273410752205) {
-		t.Fatalf("unexpected host resource cost: %f", host.TotalAllocationCost)
+	if !util.IsApproximately(clusterAMetric.TotalAllocationCost, 120.0) {
+		t.Fatalf("unexpected cluster-a resource cost: %f", clusterAMetric.TotalAllocationCost)
 	}
-	if !approximatelyWithin(host.Efficiency, 0.1273367391788061, 0.0001) {
-		t.Fatalf("unexpected host efficiency: %f", host.Efficiency)
+	if !approximatelyWithin(clusterAMetric.Efficiency, 100.0/120.0, 0.0001) {
+		t.Fatalf("unexpected cluster-a efficiency: %f", clusterAMetric.Efficiency)
 	}
 
-	if !approximatelyWithin(ces.Summary.TotalUsageCost, 4.084035616675961, 0.001) {
+	if !approximatelyWithin(ces.Summary.TotalUsageCost, 60.0, 0.001) {
 		t.Fatalf("unexpected total usage cost: %f", ces.Summary.TotalUsageCost)
 	}
-	if !approximatelyWithin(ces.Summary.WorkloadIdleCost, 13.026485867880915, 0.001) {
+	if !approximatelyWithin(ces.Summary.WorkloadAllocationCost, 110.0, 0.001) {
+		t.Fatalf("unexpected total workload allocation cost: %f", ces.Summary.WorkloadAllocationCost)
+	}
+	if !approximatelyWithin(ces.Summary.WorkloadIdleCost, 50.0, 0.001) {
 		t.Fatalf("unexpected total workload idle cost: %f", ces.Summary.WorkloadIdleCost)
 	}
-	if !approximatelyWithin(ces.Summary.InfraIdleCost, 28.430006850275422, 0.001) {
+	if !approximatelyWithin(ces.Summary.InfraIdleCost, 110.0, 0.001) {
 		t.Fatalf("unexpected total infra idle cost: %f", ces.Summary.InfraIdleCost)
 	}
-	if !approximatelyWithin(ces.Summary.TotalIdleCost, 41.45649271815634, 0.001) {
+	if !approximatelyWithin(ces.Summary.TotalIdleCost, 160.0, 0.001) {
 		t.Fatalf("unexpected total idle cost: %f", ces.Summary.TotalIdleCost)
 	}
-	if !util.IsApproximately(ces.Summary.TotalAllocationCost, 45.54041421832311) {
+	if !util.IsApproximately(ces.Summary.TotalAllocationCost, 220.0) {
 		t.Fatalf("unexpected total resource cost: %f", ces.Summary.TotalAllocationCost)
 	}
-	if !approximatelyWithin(ces.Summary.Efficiency, 0.08967936515945769, 0.0001) {
+	if !approximatelyWithin(ces.Summary.Efficiency, 0.5, 0.0001) {
 		t.Fatalf("unexpected total efficiency: %f", ces.Summary.Efficiency)
 	}
 
-	avgOfClusters := (ces.Clusters["17-4"].Efficiency + ces.Clusters["host"].Efficiency) / 2.0
+	avgOfClusters := (ces.Clusters["cluster-a"].Efficiency + ces.Clusters["cluster-b"].Efficiency) / 2.0
 	if util.IsApproximately(avgOfClusters, ces.Summary.Efficiency) {
 		t.Fatalf("expected summary efficiency to be ratio-of-sums, not simple average")
 	}

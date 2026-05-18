@@ -1229,7 +1229,7 @@
         },
         "/kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters": {
             "get": {
-                "description": "查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。\n同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分。\nfilter 语法与 allocation/summary 保持一致，常用于限制集群范围。",
+                "description": "查询按集群聚合的效率摘要信息，返回页面口径的集群效率和整体多集群效率。\n顶层 efficiency 按 OpenCost 风格口径计算：workloadAllocationCost / totalAllocationCost。\n同时返回每个资源类型（cpu/ram/gpu/pv）的 allocation/usage/idle 拆分；其中 cpuEfficiency/ramEfficiency/gpuEfficiency 仍表示 usage/request 利用率。\nfilter 语法与 allocation/summary 保持一致，常用于限制集群范围。",
                 "tags": [
                     "Allocation"
                 ],
