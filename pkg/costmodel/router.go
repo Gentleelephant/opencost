@@ -66,7 +66,9 @@ const (
 	maxCacheMinutes30d   = 137
 	CustomPricingSetting = "CustomPricing"
 	DiscountSetting      = "Discount"
+	defaultQueryCacheTTL = 60 * time.Second
 	epRules              = apiPrefix + "/rules"
+	queryCacheTTLEnvVar  = "OPENCOST_QUERY_CACHE_TTL_SECONDS"
 	// RoutePrefix is the API path prefix for all CostWize routes
 	RoutePrefix = "/kapis/costwise.wiztelemetry.io/v1alpha1"
 )
@@ -104,6 +106,51 @@ type Accesses struct {
 	settingsMutex       sync.Mutex
 	// registered http service instances
 	httpServices services.HTTPServices
+}
+
+func newQueryCache() *cache.Cache {
+	ttl := queryCacheTTL()
+	if ttl <= 0 {
+		return nil
+	}
+	return cache.New(ttl, 2*ttl)
+}
+
+func queryCacheTTL() time.Duration {
+	seconds := sysenv.GetInt(queryCacheTTLEnvVar, int(defaultQueryCacheTTL.Seconds()))
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func queryCacheKey(endpoint string, r *http.Request) string {
+	if r != nil && r.URL != nil {
+		return fmt.Sprintf("%s:%s?%s", endpoint, r.URL.Path, r.URL.Query().Encode())
+	}
+	return endpoint
+}
+
+func (a *Accesses) getQueryCacheResponse(endpoint string, r *http.Request) ([]byte, bool) {
+	if a == nil || a.QueryCache == nil {
+		return nil, false
+	}
+
+	val, found := a.QueryCache.Get(queryCacheKey(endpoint, r))
+	if !found {
+		return nil, false
+	}
+
+	resp, ok := val.([]byte)
+	return resp, ok
+}
+
+func (a *Accesses) setQueryCacheResponse(endpoint string, r *http.Request, resp []byte) {
+	if a == nil || a.QueryCache == nil || len(resp) == 0 {
+		return
+	}
+
+	a.QueryCache.Set(queryCacheKey(endpoint, r), resp, cache.DefaultExpiration)
 }
 
 // GetPrometheusClient decides whether the default Prometheus client or the Thanos client
