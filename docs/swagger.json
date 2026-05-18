@@ -396,7 +396,7 @@
         },
         "/kapis/costwise.wiztelemetry.io/v1alpha1/assets": {
             "get": {
-                "description": "查询集群中的原始或聚合资产数据，包括节点、磁盘、网络、负载均衡器等。\n不传 aggregate 时返回单个 AssetSet；传 aggregate=type 时返回按时间聚合后的资产集合列表。\n参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 accumulate 进行时间累积并按 type 聚合。",
+                "description": "查询集群中的原始或聚合资产数据，包括节点、磁盘、网络、负载均衡器等。\n不传 aggregate 时返回单个 AssetSet；传 aggregate=type 时返回按时间聚合后的资产集合列表。\n参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 step 或 accumulate 组织时间桶，最后按 type 聚合。",
                 "tags": [
                     "Asset"
                 ],
@@ -429,7 +429,13 @@
                     },
                     {
                         "type": "string",
-                        "description": "时间累积方式。仅在传 aggregate=type 时生效。支持：true、all、day、week、month。含义：将多个时间片按指定粒度累积。示例：accumulate=all 返回整个窗口的汇总；accumulate=day 返回按天累积",
+                        "description": "固定时间桶宽度。仅在传 aggregate=type 时生效。支持 Go duration 风格，如 12h、24h。用于按固定时长切分窗口；不能与 accumulate 同时使用。示例：window=7d&aggregate=type&step=12h",
+                        "name": "step",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "时间累积方式。仅在传 aggregate=type 时生效。支持：true、all、day、week、month。含义：按自然时间粒度或整个窗口累积；不能与 step 同时使用。示例：accumulate=all 返回整个窗口的汇总；accumulate=day 返回按天累积",
                         "name": "accumulate",
                         "in": "query"
                     }

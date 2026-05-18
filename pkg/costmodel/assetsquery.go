@@ -211,6 +211,24 @@ func queryAggregatedAssetSetRange(window opencost.Window, filterString, aggregat
 	return asr, nil
 }
 
+func querySteppedAssetSetRange(window opencost.Window, filterString, aggregate string, step time.Duration, compute assetSetComputer) (*opencost.AssetSetRange, error) {
+	aggregate, err := normalizeAssetAggregate(aggregate)
+	if err != nil {
+		return nil, err
+	}
+
+	asr, err := computeAssetSetRange(window, step, filterString, compute)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := asr.AggregateBy([]string{aggregate}, nil); err != nil {
+		return nil, fmt.Errorf("error aggregating assets by %s: %w", aggregate, err)
+	}
+
+	return asr, nil
+}
+
 func buildAssetAggregateResponse(asr *opencost.AssetSetRange) []map[string]opencost.Asset {
 	if asr == nil {
 		return []map[string]opencost.Asset{}

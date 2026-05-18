@@ -1,9 +1,12 @@
 package costmodel
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/julienschmidt/httprouter"
 	"github.com/opencost/opencost/core/pkg/opencost"
 )
 
@@ -198,6 +201,95 @@ func TestQueryAggregatedAssetSetRangeHourReturnsHourlyBuckets(t *testing.T) {
 		if assetSet.End() != expectedEnd {
 			t.Fatalf("bucket %d expected end %s, got %s", i, expectedEnd, assetSet.End())
 		}
+	}
+}
+
+func TestQuerySteppedAssetSetRangeReturnsTwelveHourBuckets(t *testing.T) {
+	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
+	end := start.Add(48 * time.Hour)
+
+	sets := map[int64]*opencost.AssetSet{}
+	for i := 0; i < 4; i++ {
+		bucketStart := start.Add(time.Duration(i) * 12 * time.Hour)
+		bucketEnd := bucketStart.Add(12 * time.Hour)
+		sets[bucketStart.Unix()] = testAssetSet(bucketStart, bucketEnd, float64(i+1), 0, 0)
+	}
+
+	asr, err := querySteppedAssetSetRange(
+		opencost.NewClosedWindow(start, end),
+		"",
+		defaultAssetAggregate,
+		12*time.Hour,
+		mockAssetComputer(sets),
+	)
+	if err != nil {
+		t.Fatalf("querySteppedAssetSetRange returned error: %v", err)
+	}
+
+	if got := asr.Length(); got != 4 {
+		t.Fatalf("expected 4 stepped asset sets, got %d", got)
+	}
+
+	for i, assetSet := range asr.Assets {
+		expectedStart := start.Add(time.Duration(i) * 12 * time.Hour)
+		expectedEnd := expectedStart.Add(12 * time.Hour)
+		if assetSet.Start() != expectedStart {
+			t.Fatalf("bucket %d expected start %s, got %s", i, expectedStart, assetSet.Start())
+		}
+		if assetSet.End() != expectedEnd {
+			t.Fatalf("bucket %d expected end %s, got %s", i, expectedEnd, assetSet.End())
+		}
+	}
+}
+
+func TestQuerySteppedAssetSetRangeReturnsTrailingPartialBucket(t *testing.T) {
+	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
+	end := start.Add(30 * time.Hour)
+
+	sets := map[int64]*opencost.AssetSet{
+		start.Unix():                     testAssetSet(start, start.Add(24*time.Hour), 10, 0, 0),
+		start.Add(24 * time.Hour).Unix(): testAssetSet(start.Add(24*time.Hour), end, 4, 0, 0),
+	}
+
+	asr, err := querySteppedAssetSetRange(
+		opencost.NewClosedWindow(start, end),
+		"",
+		defaultAssetAggregate,
+		24*time.Hour,
+		mockAssetComputer(sets),
+	)
+	if err != nil {
+		t.Fatalf("querySteppedAssetSetRange returned error: %v", err)
+	}
+
+	if got := asr.Length(); got != 2 {
+		t.Fatalf("expected 2 stepped asset sets, got %d", got)
+	}
+
+	if got := asr.Assets[1].Window.Duration(); got != 6*time.Hour {
+		t.Fatalf("expected trailing partial bucket duration 6h, got %s", got)
+	}
+}
+
+func TestComputeAssetsHandlerRejectsStepWithoutAggregate(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/kapis/costwise.wiztelemetry.io/v1alpha1/assets?window=7d&step=12h", nil)
+	rr := httptest.NewRecorder()
+
+	(&Accesses{}).ComputeAssetsHandler(rr, req, httprouter.Params{})
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestComputeAssetsHandlerRejectsStepWithAccumulate(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/kapis/costwise.wiztelemetry.io/v1alpha1/assets?window=7d&aggregate=type&step=12h&accumulate=day", nil)
+	rr := httptest.NewRecorder()
+
+	(&Accesses{}).ComputeAssetsHandler(rr, req, httprouter.Params{})
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
 	}
 }
 

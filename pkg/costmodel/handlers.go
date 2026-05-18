@@ -16,12 +16,13 @@ import (
 // @Tags         Asset
 // @Description  查询集群中的原始或聚合资产数据，包括节点、磁盘、网络、负载均衡器等。
 // @Description  不传 aggregate 时返回单个 AssetSet；传 aggregate=type 时返回按时间聚合后的资产集合列表。
-// @Description  参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 accumulate 进行时间累积并按 type 聚合。
+// @Description  参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 step 或 accumulate 组织时间桶，最后按 type 聚合。
 // @Param        window     query  string  true   "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today、window=week、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z"
 // @Param        cluster    query  string  false  "按集群过滤资产。支持单个或多个集群，多个集群用英文逗号分隔。该参数会与 filter 做 AND 合并。示例：cluster=prod、cluster=prod,staging"
 // @Param        filter     query  string  false  "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[<key>]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field<~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=assetType:%22node%22、filter=cluster:%22prod%22%2Bprovider:%22aws%22、filter=label[team]:%22platform%22。注意：URL 中 + 建议编码为 %2B"
 // @Param        aggregate  query  string  false  "聚合维度。当前仅支持 type。留空时返回原始资产集合；传 type 时返回按资产类型聚合后的结果。示例：aggregate=type"
-// @Param        accumulate query  string  false  "时间累积方式。仅在传 aggregate=type 时生效。支持：true、all、day、week、month。含义：将多个时间片按指定粒度累积。示例：accumulate=all 返回整个窗口的汇总；accumulate=day 返回按天累积"
+// @Param        step       query  string  false  "固定时间桶宽度。仅在传 aggregate=type 时生效。支持 Go duration 风格，如 12h、24h。用于按固定时长切分窗口；不能与 accumulate 同时使用。示例：window=7d&aggregate=type&step=12h"
+// @Param        accumulate query  string  false  "时间累积方式。仅在传 aggregate=type 时生效。支持：true、all、day、week、month。含义：按自然时间粒度或整个窗口累积；不能与 step 同时使用。示例：accumulate=all 返回整个窗口的汇总；accumulate=day 返回按天累积"
 // @Success      200  {object}  costmodel.Response
 // @Failure      400  {object}  costmodel.Response
 // @Failure      500  {object}  costmodel.Response
@@ -41,6 +42,8 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 
 	filterString := buildAssetFilterString(qp.Get("filter", ""), qp.Get("cluster", ""))
 	aggregate := qp.Get("aggregate", "")
+	stepRaw := qp.Get("step", "")
+	step := qp.GetDuration("step", 0)
 	accumulate := opencost.ParseAccumulate(qp.Get("accumulate", ""))
 
 	if aggregate != "" && aggregate != string(opencost.AssetTypeProp) {
@@ -49,7 +52,11 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if aggregate == "" {
-		if qp.Get("accumulate", "") != "" {
+		switch {
+		case stepRaw != "":
+			http.Error(w, "'step' requires 'aggregate'", http.StatusBadRequest)
+			return
+		case qp.Get("accumulate", "") != "":
 			http.Error(w, "'accumulate' requires 'aggregate'", http.StatusBadRequest)
 			return
 		}
@@ -61,6 +68,26 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 		}
 
 		w.Write(WrapData(assetSet, nil))
+		return
+	}
+
+	if stepRaw != "" {
+		if accumulate != opencost.AccumulateOptionNone {
+			http.Error(w, "'step' cannot be combined with 'accumulate'", http.StatusBadRequest)
+			return
+		}
+		if step <= 0 {
+			http.Error(w, fmt.Sprintf("Invalid 'step' parameter: %q", stepRaw), http.StatusBadRequest)
+			return
+		}
+
+		asr, err := querySteppedAssetSetRange(window, filterString, defaultAssetAggregate, step, a.Model.ComputeAssets)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting stepped assets: %s", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(WrapData(buildAssetAggregateResponse(asr), nil))
 		return
 	}
 
