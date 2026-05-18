@@ -2717,6 +2717,10 @@ func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.Respo
 // @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/allocation [get]
 func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
+	if resp, ok := a.getQueryCacheResponse("allocation", r); ok {
+		w.Write(resp)
+		return
+	}
 
 	qp := httputil.NewQueryParams(r.URL.Query())
 
@@ -2725,6 +2729,7 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 	window, err := opencost.ParseWindowWithOffset(qp.Get("window", ""), env.GetParsedUTCOffset())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid 'window' parameter: %s", err), http.StatusBadRequest)
+		return
 	}
 
 	filterString := qp.Get("filter", "")
@@ -2751,6 +2756,7 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 	aggregateBy, err := ParseAggregationProperties(aggregations)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid 'aggregate' parameter: %s", err), http.StatusBadRequest)
+		return
 	}
 
 	// IncludeIdle, if true, uses Asset data to incorporate Idle Allocation
@@ -2801,7 +2807,9 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 			}
 		}
 	}
-	w.Write(WrapData(asr, nil))
+	resp := WrapData(asr, nil)
+	a.setQueryCacheResponse("allocation", r, resp)
+	w.Write(resp)
 }
 
 // The below was transferred from a different package in order to maintain

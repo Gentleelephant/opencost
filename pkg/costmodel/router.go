@@ -93,6 +93,7 @@ type Accesses struct {
 	AggregateCache      *cache.Cache
 	CostDataCache       *cache.Cache
 	ClusterCostsCache   *cache.Cache
+	QueryCache          *cache.Cache
 	CacheExpiration     map[time.Duration]time.Duration
 	AggAPI              Aggregator
 	// SettingsCache stores current state of app settings
@@ -1569,6 +1570,7 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 	aggregateCache := cache.New(time.Minute*10, time.Minute*20)
 	costDataCache := cache.New(time.Minute*10, time.Minute*20)
 	clusterCostsCache := cache.New(cache.NoExpiration, cache.NoExpiration)
+	queryCache := newQueryCache()
 	outOfClusterCache := cache.New(time.Minute*5, time.Minute*10)
 	settingsCache := cache.New(cache.NoExpiration, cache.NoExpiration)
 
@@ -1607,6 +1609,7 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 		AggregateCache:      aggregateCache,
 		CostDataCache:       costDataCache,
 		ClusterCostsCache:   clusterCostsCache,
+		QueryCache:          queryCache,
 		OutOfClusterCache:   outOfClusterCache,
 		SettingsCache:       settingsCache,
 		CacheExpiration:     cacheExpiration,

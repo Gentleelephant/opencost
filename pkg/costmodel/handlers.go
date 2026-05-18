@@ -29,6 +29,10 @@ import (
 // @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/assets [get]
 func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
+	if resp, ok := a.getQueryCacheResponse("assets", r); ok {
+		w.Write(resp)
+		return
+	}
 
 	qp := httputil.NewQueryParams(r.URL.Query())
 
@@ -67,7 +71,9 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 
-		w.Write(WrapData(assetSet, nil))
+		resp := WrapData(assetSet, nil)
+		a.setQueryCacheResponse("assets", r, resp)
+		w.Write(resp)
 		return
 	}
 
@@ -87,7 +93,9 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 
-		w.Write(WrapData(buildAssetAggregateResponse(asr), nil))
+		resp := WrapData(buildAssetAggregateResponse(asr), nil)
+		a.setQueryCacheResponse("assets", r, resp)
+		w.Write(resp)
 		return
 	}
 
@@ -104,7 +112,9 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	w.Write(WrapData(buildAssetAggregateResponse(asr), nil))
+	resp := WrapData(buildAssetAggregateResponse(asr), nil)
+	a.setQueryCacheResponse("assets", r, resp)
+	w.Write(resp)
 }
 
 // ComputeAssetsGraphHandler returns graph-ready aggregated asset costs.

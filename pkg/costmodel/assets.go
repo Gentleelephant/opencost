@@ -2,6 +2,7 @@ package costmodel
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/opencost/opencost/core/pkg/log"
@@ -10,21 +11,43 @@ import (
 
 func (cm *CostModel) ComputeAssets(start, end time.Time) (*opencost.AssetSet, error) {
 	assetSet := opencost.NewAssetSet(start, end)
+	window := opencost.NewClosedWindow(start, end)
 
-	nodeMap, err := cm.ClusterNodes(start, end)
-	if err != nil {
-		return nil, fmt.Errorf("error computing node assets for %s: %w", opencost.NewClosedWindow(start, end), err)
+	var (
+		nodeMap map[NodeIdentifier]*Node
+		lbMap   map[LoadBalancerIdentifier]*LoadBalancer
+		diskMap map[DiskIdentifier]*Disk
 
+		nodeErr error
+		lbErr   error
+		diskErr error
+
+		wg sync.WaitGroup
+	)
+
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		nodeMap, nodeErr = cm.ClusterNodes(start, end)
+	}()
+	go func() {
+		defer wg.Done()
+		lbMap, lbErr = cm.ClusterLoadBalancers(start, end)
+	}()
+	go func() {
+		defer wg.Done()
+		diskMap, diskErr = cm.ClusterDisks(start, end)
+	}()
+	wg.Wait()
+
+	if nodeErr != nil {
+		return nil, fmt.Errorf("error computing node assets for %s: %w", window, nodeErr)
 	}
-
-	lbMap, err := cm.ClusterLoadBalancers(start, end)
-	if err != nil {
-		return nil, fmt.Errorf("error computing load balancer assets for %s: %w", opencost.NewClosedWindow(start, end), err)
+	if lbErr != nil {
+		return nil, fmt.Errorf("error computing load balancer assets for %s: %w", window, lbErr)
 	}
-
-	diskMap, err := cm.ClusterDisks(start, end)
-	if err != nil {
-		return nil, fmt.Errorf("error computing disk assets for %s: %w", opencost.NewClosedWindow(start, end), err)
+	if diskErr != nil {
+		return nil, fmt.Errorf("error computing disk assets for %s: %w", window, diskErr)
 	}
 
 	for _, d := range diskMap {
