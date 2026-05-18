@@ -2180,6 +2180,10 @@ func ParseAggregationProperties(aggregations []string) ([]string, error) {
 // @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/allocation/summary [get]
 func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
+	if resp, ok := a.getQueryCacheResponse("allocation-summary", r); ok {
+		w.Write(resp)
+		return
+	}
 
 	qp := httputil.NewQueryParams(r.URL.Query())
 
@@ -2188,6 +2192,7 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	window, err := opencost.ParseWindowWithOffset(qp.Get("window", ""), env.GetParsedUTCOffset())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid 'window' parameter: %s", err), http.StatusBadRequest)
+		return
 	}
 
 	// Step is an optional parameter that defines the duration per-set, i.e.
@@ -2207,6 +2212,7 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	aggregateBy, err := ParseAggregationProperties(aggregations)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Invalid 'aggregate' parameter: %s", err), http.StatusBadRequest)
+		return
 	}
 
 	// Accumulate is an optional parameter, defaulting to false, which if true
@@ -2263,7 +2269,9 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	}
 	sasr := opencost.NewSummaryAllocationSetRange(sasl...)
 
-	w.Write(WrapData(sasr.ToResponse(), nil))
+	resp := WrapData(sasr.ToResponse(), nil)
+	a.setQueryCacheResponse("allocation-summary", r, resp)
+	w.Write(resp)
 }
 
 type SummaryAllocationToplineResponse struct {
