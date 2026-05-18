@@ -293,6 +293,59 @@ func TestComputeAssetsHandlerRejectsStepWithAccumulate(t *testing.T) {
 	}
 }
 
+func TestComputeAssetsGraphHandlerRejectsStepWithAccumulate(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/kapis/costwise.wiztelemetry.io/v1alpha1/assets/graph?window=7d&aggregate=type&step=12h&accumulate=day", nil)
+	rr := httptest.NewRecorder()
+
+	(&Accesses{}).ComputeAssetsGraphHandler(rr, req, httprouter.Params{})
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestBuildAssetGraphResponseSupportsSteppedRange(t *testing.T) {
+	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
+	end := start.Add(48 * time.Hour)
+
+	sets := map[int64]*opencost.AssetSet{}
+	for i := 0; i < 4; i++ {
+		bucketStart := start.Add(time.Duration(i) * 12 * time.Hour)
+		bucketEnd := bucketStart.Add(12 * time.Hour)
+		sets[bucketStart.Unix()] = testAssetSet(bucketStart, bucketEnd, float64(10+i), 2, 1)
+	}
+
+	asr, err := querySteppedAssetSetRange(
+		opencost.NewClosedWindow(start, end),
+		"",
+		defaultAssetAggregate,
+		12*time.Hour,
+		mockAssetComputer(sets),
+	)
+	if err != nil {
+		t.Fatalf("querySteppedAssetSetRange returned error: %v", err)
+	}
+
+	graph := buildAssetGraphResponse(asr, 0, 2)
+	if got := len(graph.Chart); got != 4 {
+		t.Fatalf("expected 4 chart entries, got %d", got)
+	}
+
+	for i, datum := range graph.Chart {
+		expectedStart := start.Add(time.Duration(i) * 12 * time.Hour)
+		expectedEnd := expectedStart.Add(12 * time.Hour)
+		if datum.Start != expectedStart {
+			t.Fatalf("datum %d expected start %s, got %s", i, expectedStart, datum.Start)
+		}
+		if datum.End != expectedEnd {
+			t.Fatalf("datum %d expected end %s, got %s", i, expectedEnd, datum.End)
+		}
+		if len(datum.Items) != 2 {
+			t.Fatalf("datum %d expected 2 graph items, got %d", i, len(datum.Items))
+		}
+	}
+}
+
 func TestQueryAggregatedAssetSetRangeAggregateByName(t *testing.T) {
 	start := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)

@@ -514,7 +514,7 @@
         },
         "/kapis/costwise.wiztelemetry.io/v1alpha1/assets/graph": {
             "get": {
-                "description": "查询资产图表数据，返回按时间分桶后的资产成本曲线。\n参数处理顺序为：先按 filter 过滤资产，再按 accumulate 切分时间粒度，再按 aggregate 聚合，最后按成本降序并应用 offset/limit。\n适合资产趋势图、TopN 图表、按集群/类型/标签观察资产成本变化。\n每个时间片除 items 外，还会返回 totalCost，表示该时间片内所有图表项的总成本，可直接用于计算单项占比。",
+                "description": "查询资产图表数据，返回按时间分桶后的资产成本曲线。\n参数处理顺序为：先按 filter 过滤资产，再按 step 或 accumulate 组织时间桶，再按 aggregate 聚合，最后按成本降序并应用 offset/limit。\n适合资产趋势图、TopN 图表、按集群/类型/标签观察资产成本变化。\n每个时间片除 items 外，还会返回 totalCost，表示该时间片内所有图表项的总成本，可直接用于计算单项占比。",
                 "tags": [
                     "Asset"
                 ],
@@ -535,7 +535,13 @@
                     },
                     {
                         "type": "string",
-                        "description": "时间粒度。默认 day。支持：hour、day、week、month。含义：按小时、按天、按周、按月返回图表桶。示例：accumulate=hour 用于 24 小时趋势；accumulate=week 用于周维度报表",
+                        "description": "固定时间桶宽度。支持 Go duration 风格，如 12h、24h。用于按固定时长切分窗口；不能与 accumulate 同时使用。示例：window=7d&step=12h&aggregate=type",
+                        "name": "step",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "时间粒度。默认 day。支持：hour、day、week、month。含义：按自然时间粒度返回图表桶；不能与 step 同时使用。示例：accumulate=hour 用于 24 小时趋势；accumulate=week 用于周维度报表",
                         "name": "accumulate",
                         "in": "query"
                     },
