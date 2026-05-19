@@ -153,6 +153,45 @@ func (a *Accesses) setQueryCacheResponse(endpoint string, r *http.Request, resp 
 	a.QueryCache.Set(queryCacheKey(endpoint, r), resp, cache.DefaultExpiration)
 }
 
+func (a *Accesses) setQueryCacheResponseWithTTL(endpoint string, r *http.Request, resp []byte, ttl time.Duration) {
+	if a == nil || a.QueryCache == nil || len(resp) == 0 {
+		return
+	}
+
+	a.QueryCache.Set(queryCacheKey(endpoint, r), resp, ttl)
+}
+
+// cacheTTLForWindow returns an appropriate cache TTL based on the query window,
+// building on top of the global OPENCOST_QUERY_CACHE_TTL_SECONDS baseline.
+// Historical windows (ending more than 1 hour ago) use max(baseTTL, 5m) to
+// improve cache hit rate while respecting any longer user-configured TTL.
+// Near-realtime windows use min(baseTTL, 30s) to stay fresh while respecting
+// any shorter user-configured TTL.
+func cacheTTLForWindow(w *opencost.Window) time.Duration {
+	if w == nil || w.End() == nil {
+		return cache.DefaultExpiration
+	}
+
+	baseTTL := queryCacheTTL()
+	windowEnd := *w.End()
+	now := time.Now()
+
+	// If the window end is more than 1 hour in the past, treat as historical
+	if windowEnd.Add(1 * time.Hour).Before(now) {
+		// Historical window: use at least 5 minutes, or the global config if longer
+		if baseTTL > 5*time.Minute {
+			return baseTTL
+		}
+		return 5 * time.Minute
+	}
+
+	// Near-realtime window: cap at 30 seconds, or use the global config if shorter
+	if baseTTL > 0 && baseTTL < 30*time.Second {
+		return baseTTL
+	}
+	return 30 * time.Second
+}
+
 // GetPrometheusClient decides whether the default Prometheus client or the Thanos client
 // should be used.
 func (a *Accesses) GetPrometheusClient(remote bool) prometheus.Client {

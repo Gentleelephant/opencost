@@ -72,7 +72,7 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 		}
 
 		resp := WrapData(assetSet, nil)
-		a.setQueryCacheResponse("assets", r, resp)
+		a.setQueryCacheResponseWithTTL("assets", r, resp, cacheTTLForWindow(&window))
 		w.Write(resp)
 		return
 	}
@@ -94,7 +94,7 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 		}
 
 		resp := WrapData(buildAssetAggregateResponse(asr), nil)
-		a.setQueryCacheResponse("assets", r, resp)
+		a.setQueryCacheResponseWithTTL("assets", r, resp, cacheTTLForWindow(&window))
 		w.Write(resp)
 		return
 	}
@@ -113,7 +113,7 @@ func (a *Accesses) ComputeAssetsHandler(w http.ResponseWriter, r *http.Request, 
 	}
 
 	resp := WrapData(buildAssetAggregateResponse(asr), nil)
-	a.setQueryCacheResponse("assets", r, resp)
+	a.setQueryCacheResponseWithTTL("assets", r, resp, cacheTTLForWindow(&window))
 	w.Write(resp)
 }
 

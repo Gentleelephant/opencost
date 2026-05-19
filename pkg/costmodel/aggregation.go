@@ -2270,7 +2270,7 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	sasr := opencost.NewSummaryAllocationSetRange(sasl...)
 
 	resp := WrapData(sasr.ToResponse(), nil)
-	a.setQueryCacheResponse("allocation-summary", r, resp)
+	a.setQueryCacheResponseWithTTL("allocation-summary", r, resp, cacheTTLForWindow(&window))
 	w.Write(resp)
 }
 
@@ -2804,7 +2804,7 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	resp := WrapData(asr, nil)
-	a.setQueryCacheResponse("allocation", r, resp)
+	a.setQueryCacheResponseWithTTL("allocation", r, resp, cacheTTLForWindow(&window))
 	w.Write(resp)
 }
 

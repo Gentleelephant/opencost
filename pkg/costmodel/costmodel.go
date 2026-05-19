@@ -26,6 +26,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
+	"github.com/patrickmn/go-cache"
+
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -64,6 +67,8 @@ type CostModel struct {
 	PrometheusClient           prometheus.Client
 	Provider                   costAnalyzerCloud.Provider
 	pricingMetadata            *costAnalyzerCloud.PricingMatchMetadata
+
+	allocStepCache *cache.Cache
 }
 
 func NewCostModel(client prometheus.Client, provider costAnalyzerCloud.Provider, cache clustercache.ClusterCache, clusterMap clusters.ClusterMap, scrapeInterval time.Duration) *CostModel {
@@ -78,7 +83,14 @@ func NewCostModel(client prometheus.Client, provider costAnalyzerCloud.Provider,
 		Provider:                   provider,
 		RequestGroup:               requestGroup,
 		ScrapeInterval:             scrapeInterval,
+		allocStepCache:             newAllocStepCache(),
 	}
+}
+
+const defaultAllocStepCacheTTL = 5 * time.Minute
+
+func newAllocStepCache() *cache.Cache {
+	return cache.New(defaultAllocStepCacheTTL, 2*defaultAllocStepCacheTTL)
 }
 
 type CostData struct {
@@ -2518,15 +2530,31 @@ func (cm *CostModel) QueryAllocation(window opencost.Window, resolution, step ti
 	stepEnd := stepStart.Add(step)
 	var isAKS bool
 	for window.End().After(stepStart) {
-		allocSet, err := cm.ComputeAllocation(stepStart, stepEnd, resolution)
-		if err != nil {
-			return nil, fmt.Errorf("error computing allocations for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
-		}
+		var allocSet *opencost.AllocationSet
 
 		if includeIdle {
-			assetSet, err := cm.ComputeAssets(stepStart, stepEnd)
-			if err != nil {
-				return nil, fmt.Errorf("error computing assets for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
+			var g errgroup.Group
+			var assetSet *opencost.AssetSet
+
+			g.Go(func() error {
+				var err error
+				allocSet, err = cm.ComputeAllocation(stepStart, stepEnd, resolution)
+				if err != nil {
+					return fmt.Errorf("error computing allocations for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
+				}
+				return nil
+			})
+			g.Go(func() error {
+				var err error
+				assetSet, err = cm.ComputeAssets(stepStart, stepEnd)
+				if err != nil {
+					return fmt.Errorf("error computing assets for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
+				}
+				return nil
+			})
+
+			if err := g.Wait(); err != nil {
+				return nil, err
 			}
 
 			if includeProportionalAssetResourceCosts {
@@ -2555,6 +2583,12 @@ func (cm *CostModel) QueryAllocation(window opencost.Window, resolution, step ti
 
 			for _, idleAlloc := range idleSet.Allocations {
 				allocSet.Insert(idleAlloc)
+			}
+		} else {
+			var err error
+			allocSet, err = cm.ComputeAllocation(stepStart, stepEnd, resolution)
+			if err != nil {
+				return nil, fmt.Errorf("error computing allocations for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
 			}
 		}
 

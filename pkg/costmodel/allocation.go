@@ -329,7 +329,55 @@ func (cm *CostModel) DateRange() (time.Time, time.Time, error) {
 	return oldest, newest, nil
 }
 
+// allocStepCacheValue holds the cached result of computeAllocation.
+type allocStepCacheValue struct {
+	allocSet *opencost.AllocationSet
+	nodeMap  map[nodeKey]*nodePricing
+}
+
+// allocStepCacheTTL returns a cache TTL appropriate for the window, similar to
+// cacheTTLForWindow but operating on raw time values.
+func allocStepCacheTTL(windowEnd time.Time) time.Duration {
+	now := time.Now()
+	if windowEnd.Add(1 * time.Hour).Before(now) {
+		return 10 * time.Minute
+	}
+	return 30 * time.Second
+}
+
+// allocStepCacheKey builds a cache key for computeAllocation results based on
+// the query parameters and environment settings that affect the result.
+func allocStepCacheKey(start, end time.Time, resolution time.Duration) string {
+	return fmt.Sprintf("%d-%d-%s-%s-%v",
+		start.Unix(), end.Unix(), resolution.String(),
+		env.GetPromClusterFilter(), env.IsIngestingPodUID())
+}
+
+// cloneNodeMap creates a deep copy of the nodePricing map so that cached data
+// is never shared with callers.
+func cloneNodeMap(src map[nodeKey]*nodePricing) map[nodeKey]*nodePricing {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[nodeKey]*nodePricing, len(src))
+	for k, v := range src {
+		copyVal := *v
+		dst[k] = &copyVal
+	}
+	return dst
+}
+
 func (cm *CostModel) computeAllocation(start, end time.Time, resolution time.Duration) (*opencost.AllocationSet, map[nodeKey]*nodePricing, error) {
+
+	// Check the step-level allocation cache before performing any queries.
+	if cm.allocStepCache != nil {
+		key := allocStepCacheKey(start, end, resolution)
+		if val, found := cm.allocStepCache.Get(key); found {
+			cached := val.(*allocStepCacheValue)
+			return cached.allocSet.Clone(), cloneNodeMap(cached.nodeMap), nil
+		}
+	}
+
 	// 1. Build out Pod map from resolution-tuned, batched Pod start/end query
 	// 2. Run and apply the results of the remaining queries to
 	// 3. Build out AllocationSet from completed Pod map
@@ -417,24 +465,7 @@ func (cm *CostModel) computeAllocation(start, end time.Time, resolution time.Dur
 
 	queryCPUUsageMax := fmt.Sprintf(queryFmtCPUUsageMaxRecordingRule, env.GetPromClusterFilter(), durStr, env.GetPromClusterLabel())
 	resChCPUUsageMax := ctx.QueryAtTime(queryCPUUsageMax, end)
-	resCPUUsageMax, _ := resChCPUUsageMax.Await()
-	// If the recording rule has no data, try to fall back to the subquery.
-	if len(resCPUUsageMax) == 0 {
-		// The parameter after the metric ...{}[<thisone>] should be set to 2x
-		// the resolution, to make sure the irate always has two points to query
-		// in case the Prom scrape duration has been reduced to be equal to the
-		// resolution.
-		doubleResStr := timeutil.DurationString(2 * resolution)
-		queryCPUUsageMax = fmt.Sprintf(queryFmtCPUUsageMaxSubquery, env.GetPromClusterFilter(), doubleResStr, durStr, resStr, env.GetPromClusterLabel())
-		resChCPUUsageMax = ctx.QueryAtTime(queryCPUUsageMax, end)
-		resCPUUsageMax, _ = resChCPUUsageMax.Await()
 
-		// This avoids logspam if there is no data for either metric (e.g. if
-		// the Prometheus didn't exist in the queried window of time).
-		if len(resCPUUsageMax) > 0 {
-			log.Debugf("CPU usage recording rule query returned an empty result when queried at %s over %s. Fell back to subquery. Consider setting up Kubecost CPU usage recording role to reduce query load on Prometheus; subqueries are expensive.", end.String(), durStr)
-		}
-	}
 
 	// GPU Queries
 	//queryIsGpuShared := fmt.Sprintf(queryFmtIsGPuShared, durStr)
@@ -561,6 +592,25 @@ func (cm *CostModel) computeAllocation(start, end time.Time, resolution time.Dur
 
 	queryLBActiveMins := fmt.Sprintf(queryFmtLBActiveMins, env.GetPromClusterFilter(), env.GetPromClusterLabel(), durStr, resStr)
 	resChLBActiveMins := ctx.QueryAtTime(queryLBActiveMins, end)
+
+	resCPUUsageMax, _ := resChCPUUsageMax.Await()
+	// If the recording rule has no data, try to fall back to the subquery.
+	if len(resCPUUsageMax) == 0 {
+		// The parameter after the metric ...{}[<thisone>] should be set to 2x
+		// the resolution, to make sure the irate always has two points to query
+		// in case the Prom scrape duration has been reduced to be equal to the
+		// resolution.
+		doubleResStr := timeutil.DurationString(2 * resolution)
+		queryCPUUsageMax = fmt.Sprintf(queryFmtCPUUsageMaxSubquery, env.GetPromClusterFilter(), doubleResStr, durStr, resStr, env.GetPromClusterLabel())
+		resChCPUUsageMax = ctx.QueryAtTime(queryCPUUsageMax, end)
+		resCPUUsageMax, _ = resChCPUUsageMax.Await()
+
+		// This avoids logspam if there is no data for either metric (e.g. if
+		// the Prometheus didn't exist in the queried window of time).
+		if len(resCPUUsageMax) > 0 {
+			log.Debugf("CPU usage recording rule query returned an empty result when queried at %s over %s. Fell back to subquery. Consider setting up Kubecost CPU usage recording role to reduce query load on Prometheus; subqueries are expensive.", end.String(), durStr)
+		}
+	}
 
 	resCPUCoresAllocated, _ := resChCPUCoresAllocated.Await()
 	resCPURequests, _ := resChCPURequests.Await()
@@ -749,6 +799,16 @@ func (cm *CostModel) computeAllocation(start, end time.Time, resolution time.Dur
 			alloc.Name = fmt.Sprintf("%s/%s/%s/%s/%s", cluster, nodeName, namespace, podName, container)
 			allocSet.Set(alloc)
 		}
+	}
+
+	// Store the computed result in the step cache for future reuse.
+	// Clone the AllocationSet before storing, so that subsequent mutations
+	// by the caller (e.g. Insert, filtering) never pollute the cached entry.
+	if cm.allocStepCache != nil {
+		cm.allocStepCache.Set(allocStepCacheKey(start, end, resolution), &allocStepCacheValue{
+			allocSet: allocSet.Clone(),
+			nodeMap:  cloneNodeMap(nodeMap),
+		}, allocStepCacheTTL(end))
 	}
 
 	return allocSet, nodeMap, nil
