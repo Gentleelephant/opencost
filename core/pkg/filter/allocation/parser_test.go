@@ -27,17 +27,7 @@ func TestParse(t *testing.T) {
 			input: `namespace: "kubecost"`,
 		},
 		{
-<<<<<<< HEAD
-=======
-			name:  "Single: account",
-			input: `account: "aws-account-123"`,
-		},
-		{
-			name:  "Single: namespace label",
-			input: `namespaceLabel[app]:"kubecost"`,
-		},
-		{
->>>>>>> a8a07b03 (KCM-5277 add account to allocation field (#3632))
+
 			name:  "Single Group",
 			input: `(namespace: "kubecost")`,
 		},

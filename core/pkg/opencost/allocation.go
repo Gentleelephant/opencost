@@ -104,6 +104,11 @@ type Allocation struct {
 	deprecatedGPURequestAverage float64        `json:"-"`             //@bingen:field[version=22]
 	deprecatedGPUUsageAverage   float64        `json:"-"`             //@bingen:field[version=22]
 	GPUAllocation               *GPUAllocation `json:"GPUAllocation"` //@bingen:field[version=23]
+	CPUCoreLimitAverage         float64        `json:"cpuCoreLimitAverage"` //@bingen:field[version=24]
+	RAMBytesLimitAverage        float64        `json:"ramByteLimitAverage"` //@bingen:field[version=24]
+	// NAT Gateway Costs
+	NetworkNatGatewayEgressCost  float64 `json:"networkNatGatewayEgressCost"`  //@bingen:field[version=25]
+	NetworkNatGatewayIngressCost float64 `json:"networkNatGatewayIngressCost"` //@bingen:field[version=25]
 }
 
 type GPUAllocation struct {
@@ -1293,11 +1298,17 @@ func (a *Allocation) add(that *Allocation) {
 	cpuReqCoreMins := a.CPUCoreRequestAverage * a.Minutes()
 	cpuReqCoreMins += that.CPUCoreRequestAverage * that.Minutes()
 
+	cpuLimCoreMins := a.CPUCoreLimitAverage * a.Minutes()
+	cpuLimCoreMins += that.CPUCoreLimitAverage * that.Minutes()
+
 	cpuUseCoreMins := a.CPUCoreUsageAverage * a.Minutes()
 	cpuUseCoreMins += that.CPUCoreUsageAverage * that.Minutes()
 
 	ramReqByteMins := a.RAMBytesRequestAverage * a.Minutes()
 	ramReqByteMins += that.RAMBytesRequestAverage * that.Minutes()
+
+	ramLimByteMins := a.RAMBytesLimitAverage * a.Minutes()
+	ramLimByteMins += that.RAMBytesLimitAverage * that.Minutes()
 
 	ramUseByteMins := a.RAMBytesUsageAverage * a.Minutes()
 	ramUseByteMins += that.RAMBytesUsageAverage * that.Minutes()
@@ -1346,8 +1357,10 @@ func (a *Allocation) add(that *Allocation) {
 	// TODO:TEST write a unit test that fails if this is done incorrectly
 	if a.Minutes() > 0 {
 		a.CPUCoreRequestAverage = cpuReqCoreMins / a.Minutes()
+		a.CPUCoreLimitAverage = cpuLimCoreMins / a.Minutes()
 		a.CPUCoreUsageAverage = cpuUseCoreMins / a.Minutes()
 		a.RAMBytesRequestAverage = ramReqByteMins / a.Minutes()
+		a.RAMBytesLimitAverage = ramLimByteMins / a.Minutes()
 		a.RAMBytesUsageAverage = ramUseByteMins / a.Minutes()
 
 		if a.GPUAllocation != nil {
@@ -1367,8 +1380,10 @@ func (a *Allocation) add(that *Allocation) {
 		}
 	} else {
 		a.CPUCoreRequestAverage = 0.0
+		a.CPUCoreLimitAverage = 0.0
 		a.CPUCoreUsageAverage = 0.0
 		a.RAMBytesRequestAverage = 0.0
+		a.RAMBytesLimitAverage = 0.0
 		a.RAMBytesUsageAverage = 0.0
 
 		if a.GPUAllocation != nil {
@@ -1395,6 +1410,8 @@ func (a *Allocation) add(that *Allocation) {
 	a.NetworkCrossZoneCost += that.NetworkCrossZoneCost
 	a.NetworkCrossRegionCost += that.NetworkCrossRegionCost
 	a.NetworkInternetCost += that.NetworkInternetCost
+	a.NetworkNatGatewayEgressCost += that.NetworkNatGatewayEgressCost
+	a.NetworkNatGatewayIngressCost += that.NetworkNatGatewayIngressCost
 	a.LoadBalancerCost += that.LoadBalancerCost
 	a.SharedCost += that.SharedCost
 	a.ExternalCost += that.ExternalCost
@@ -3258,6 +3275,8 @@ func (asr *AllocationSetRange) Accumulate(accumulateBy AccumulateOption) (*Alloc
 		return asr.accumulateByWeek()
 	case AccumulateOptionMonth:
 		return asr.accumulateByMonth()
+	case AccumulateOptionQuarter:
+		return asr.accumulateByQuarter()
 	default:
 		// ideally, this should never happen
 		return nil, fmt.Errorf("unexpected error, invalid accumulateByType: %s", accumulateBy)
@@ -3353,6 +3372,44 @@ func (asr *AllocationSetRange) accumulateByMonth() (*AllocationSetRange, error) 
 
 		// either the month has ended, or there are no more allocation sets
 		if month != nextDayMonth || i == len(asr.Allocations)-1 {
+			if length := len(toAccumulate.Allocations); length != 1 {
+				return nil, fmt.Errorf("failed accumulation, detected %d sets instead of 1", length)
+			}
+			result.Append(toAccumulate.Allocations[0])
+			toAccumulate = nil
+		}
+	}
+	return result, nil
+}
+
+func (asr *AllocationSetRange) accumulateByQuarter() (*AllocationSetRange, error) {
+	var toAccumulate *AllocationSetRange
+	result := NewAllocationSetRange()
+	for i, as := range asr.Allocations {
+		if as.Window.Duration() != time.Hour*24 {
+			return nil, fmt.Errorf("window duration must equal 24 hours; got:%s", as.Window.Duration())
+		}
+
+		year, month, _ := as.Window.Start().Date()
+		nextDay := as.Window.Start().Add(time.Hour * 24)
+		nextYear, nextMonth, _ := nextDay.Date()
+		quarter := (int(month) - 1) / 3
+		nextQuarter := (int(nextMonth) - 1) / 3
+
+		if toAccumulate == nil {
+			toAccumulate = NewAllocationSetRange()
+			as = as.Clone()
+		}
+
+		toAccumulate.Append(as)
+		asAccumulated, err := toAccumulate.accumulate()
+		if err != nil {
+			return nil, fmt.Errorf("error accumulating result: %s", err)
+		}
+		toAccumulate = NewAllocationSetRange(asAccumulated)
+
+		// either the quarter has ended, or there are no more allocation sets
+		if quarter != nextQuarter || year != nextYear || i == len(asr.Allocations)-1 {
 			if length := len(toAccumulate.Allocations); length != 1 {
 				return nil, fmt.Errorf("failed accumulation, detected %d sets instead of 1", length)
 			}
