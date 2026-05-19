@@ -27,7 +27,10 @@ func TestParse(t *testing.T) {
 			input: `namespace: "kubecost"`,
 		},
 		{
-
+			name:  "Single: account",
+			input: `account: "aws-account-123"`,
+		},
+		{
 			name:  "Single Group",
 			input: `(namespace: "kubecost")`,
 		},

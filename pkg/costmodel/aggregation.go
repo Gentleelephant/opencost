@@ -2808,8 +2808,6 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 	w.Write(resp)
 }
 
-
-
 // The below was transferred from a different package in order to maintain
 // previous behavior. Ultimately, we should clean this up at some point.
 // TODO move to util and/or standardize everything

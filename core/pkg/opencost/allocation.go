@@ -744,6 +744,7 @@ func (a *Allocation) Clone() *Allocation {
 		End:                            a.End,
 		CPUCoreHours:                   a.CPUCoreHours,
 		CPUCoreRequestAverage:          a.CPUCoreRequestAverage,
+		CPUCoreLimitAverage:            a.CPUCoreLimitAverage,
 		CPUCoreUsageAverage:            a.CPUCoreUsageAverage,
 		CPUCost:                        a.CPUCost,
 		CPUCostIdle:                    a.CPUCostIdle,
@@ -760,6 +761,8 @@ func (a *Allocation) Clone() *Allocation {
 		NetworkCrossZoneCost:           a.NetworkCrossZoneCost,
 		NetworkCrossRegionCost:         a.NetworkCrossRegionCost,
 		NetworkInternetCost:            a.NetworkInternetCost,
+		NetworkNatGatewayEgressCost:    a.NetworkNatGatewayEgressCost,
+		NetworkNatGatewayIngressCost:   a.NetworkNatGatewayIngressCost,
 		NetworkCostAdjustment:          a.NetworkCostAdjustment,
 		LoadBalancerCost:               a.LoadBalancerCost,
 		LoadBalancerCostAdjustment:     a.LoadBalancerCostAdjustment,
@@ -767,6 +770,7 @@ func (a *Allocation) Clone() *Allocation {
 		PVCostAdjustment:               a.PVCostAdjustment,
 		RAMByteHours:                   a.RAMByteHours,
 		RAMBytesRequestAverage:         a.RAMBytesRequestAverage,
+		RAMBytesLimitAverage:           a.RAMBytesLimitAverage,
 		RAMBytesUsageAverage:           a.RAMBytesUsageAverage,
 		RAMCost:                        a.RAMCost,
 		RAMCostIdle:                    a.RAMCostIdle,
@@ -809,6 +813,9 @@ func (a *Allocation) Equal(that *Allocation) bool {
 	if !util.IsApproximately(a.CPUCoreHours, that.CPUCoreHours) {
 		return false
 	}
+	if !util.IsApproximately(a.CPUCoreLimitAverage, that.CPUCoreLimitAverage) {
+		return false
+	}
 	if !util.IsApproximately(a.CPUCost, that.CPUCost) {
 		return false
 	}
@@ -848,6 +855,12 @@ func (a *Allocation) Equal(that *Allocation) bool {
 	if !util.IsApproximately(a.NetworkInternetCost, that.NetworkInternetCost) {
 		return false
 	}
+	if !util.IsApproximately(a.NetworkNatGatewayEgressCost, that.NetworkNatGatewayEgressCost) {
+		return false
+	}
+	if !util.IsApproximately(a.NetworkNatGatewayIngressCost, that.NetworkNatGatewayIngressCost) {
+		return false
+	}
 	if !util.IsApproximately(a.NetworkCostAdjustment, that.NetworkCostAdjustment) {
 		return false
 	}
@@ -861,6 +874,9 @@ func (a *Allocation) Equal(that *Allocation) bool {
 		return false
 	}
 	if !util.IsApproximately(a.RAMByteHours, that.RAMByteHours) {
+		return false
+	}
+	if !util.IsApproximately(a.RAMBytesLimitAverage, that.RAMBytesLimitAverage) {
 		return false
 	}
 	if !util.IsApproximately(a.RAMCost, that.RAMCost) {
@@ -2720,6 +2736,10 @@ func (a *Allocation) SanitizeNaN() {
 		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for CPUCoreUsageAverage name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
 		a.CPUCoreUsageAverage = 0
 	}
+	if math.IsNaN(a.CPUCoreLimitAverage) {
+		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for CPUCoreLimitAverage name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
+		a.CPUCoreLimitAverage = 0
+	}
 	if math.IsNaN(a.CPUCostAdjustment) {
 		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for CPUCostAdjustment name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
 		a.CPUCostAdjustment = 0
@@ -2765,6 +2785,14 @@ func (a *Allocation) SanitizeNaN() {
 		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for NetworkInternetCost name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
 		a.NetworkInternetCost = 0
 	}
+	if math.IsNaN(a.NetworkNatGatewayEgressCost) {
+		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for NetworkNatGatewayEgressCost name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
+		a.NetworkNatGatewayEgressCost = 0
+	}
+	if math.IsNaN(a.NetworkNatGatewayIngressCost) {
+		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for NetworkNatGatewayIngressCost name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
+		a.NetworkNatGatewayIngressCost = 0
+	}
 	if math.IsNaN(a.NetworkCostAdjustment) {
 		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for NetworkCostAdjustment name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
 		a.NetworkCostAdjustment = 0
@@ -2792,6 +2820,10 @@ func (a *Allocation) SanitizeNaN() {
 	if math.IsNaN(a.RAMBytesUsageAverage) {
 		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for RAMBytesUsageAverage name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
 		a.RAMBytesUsageAverage = 0
+	}
+	if math.IsNaN(a.RAMBytesLimitAverage) {
+		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for RAMBytesLimitAverage name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
+		a.RAMBytesLimitAverage = 0
 	}
 	if math.IsNaN(a.RAMCost) {
 		log.DedupedWarningf(5, "Allocation: Unexpected NaN found for RAMCost name:%s, window:%s, properties:%s", a.Name, a.Window.String(), a.Properties.String())
