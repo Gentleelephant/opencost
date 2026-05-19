@@ -23,3 +23,9 @@ tilt_config.json
 # Test reports
 coverage.html
 coverage.out
+
+# local tool caches and artifacts
+.gocache/
+.playwright-mcp/
+.zread/
+screenshots/

@@ -245,9 +245,11 @@ func (sa *SummaryAllocation) Clone() *SummaryAllocation {
 		CPUCoreLimitAverage:    sa.CPUCoreLimitAverage,
 		CPUCoreUsageAverage:    sa.CPUCoreUsageAverage,
 		CPUCost:                sa.CPUCost,
+		CPUCostIdle:            sa.CPUCostIdle,
 		GPURequestAverage:      sa.GPURequestAverage,
 		GPUUsageAverage:        sa.GPUUsageAverage,
 		GPUCost:                sa.GPUCost,
+		GPUCostIdle:            sa.GPUCostIdle,
 		NetworkCost:            sa.NetworkCost,
 		LoadBalancerCost:       sa.LoadBalancerCost,
 		PVCost:                 sa.PVCost,
@@ -255,8 +257,10 @@ func (sa *SummaryAllocation) Clone() *SummaryAllocation {
 		RAMBytesLimitAverage:   sa.RAMBytesLimitAverage,
 		RAMBytesUsageAverage:   sa.RAMBytesUsageAverage,
 		RAMCost:                sa.RAMCost,
+		RAMCostIdle:            sa.RAMCostIdle,
 		SharedCost:             sa.SharedCost,
 		ExternalCost:           sa.ExternalCost,
+		UnmountedPVCost:        sa.UnmountedPVCost,
 		Efficiency:             sa.Efficiency,
 	}
 }

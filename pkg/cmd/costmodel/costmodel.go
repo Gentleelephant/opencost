@@ -29,6 +29,12 @@ import (
 
 const shutdownTimeout = 30 * time.Second
 
+func Healthz(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Length", "0")
+	w.Header().Set("Content-Type", "text/plain")
+}
+
 func Execute(conf *Config) error {
 	log.Infof("Starting cost-model version %s", version.FriendlyVersion())
 	if conf == nil {
@@ -51,12 +57,14 @@ func Execute(conf *Config) error {
 		}
 
 		// Register OpenCost Specific Endpoints
-		router.GET("/allocation", a.ComputeAllocationHandler)
-		router.GET("/allocation/summary", a.ComputeAllocationHandlerSummary)
-		router.GET("/assets", a.ComputeAssetsHandler)
+		router.GET(costmodel.RoutePrefix+"/allocation", a.ComputeAllocationHandler)
+		router.GET(costmodel.RoutePrefix+"/allocation/summary", a.ComputeAllocationHandlerSummary)
+		router.GET(costmodel.RoutePrefix+"/assets", a.ComputeAssetsHandler)
+		router.GET(costmodel.RoutePrefix+"/assets/graph", a.ComputeAssetsGraphHandler)
 		if conf.CarbonEstimatesEnabled {
-			router.GET("/assets/carbon", a.ComputeAssetsCarbonHandler)
+			router.GET(costmodel.RoutePrefix+"/assets/carbon", a.ComputeAssetsCarbonHandler)
 		}
+		registerOpenCostUICompatibilityRoutes(router, a, conf.CarbonEstimatesEnabled)
 
 	}
 
@@ -73,7 +81,8 @@ func Execute(conf *Config) error {
 
 	// this endpoint is intentionally left out of the "if env.IsCustomCostEnabled()" conditional; in the handler, it is
 	// valid for CustomCostPipelineService to be nil
-	router.GET("/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
+	router.GET(costmodel.RoutePrefix+"/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
+	router.GET("/healthz", Healthz)
 
 	// Initialize MCP Server if enabled and Kubernetes is available
 	if conf.MCPServerEnabled && a != nil {
@@ -139,6 +148,24 @@ func Execute(conf *Config) error {
 		log.Infof("Graceful shutdown completed")
 		return nil
 	}
+}
+
+func registerOpenCostUICompatibilityRoutes(router *httprouter.Router, a *costmodel.Accesses, carbonEnabled bool) {
+	// The bundled/upstream OpenCost UI requests legacy root-relative API paths.
+	router.GET("/allocation", a.ComputeAllocationHandler)
+	router.GET("/allocation/compute", a.ComputeAllocationHandler)
+	router.GET("/allocation/summary", a.ComputeAllocationHandlerSummary)
+	router.GET("/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
+	router.GET("/allocation/summary/topline", a.ComputeAllocationHandlerSummaryTopline)
+	router.GET("/efficiency/clusters", a.ComputeAllocationHandlerClusterEfficiencySummary)
+	router.GET("/assets", a.ComputeAssetsHandler)
+	router.GET("/assets/graph", a.ComputeAssetsGraphHandler)
+	if carbonEnabled {
+		router.GET("/assets/carbon", a.ComputeAssetsCarbonHandler)
+	}
+	router.GET("/clusterInfo", a.ClusterInfo)
+	router.GET("/clusterInfoMap", a.GetClusterInfoMap)
+	router.GET("/managementPlatform", a.ManagementPlatform)
 }
 
 func StartExportWorker(ctx context.Context, model costmodel.AllocationModel) error {

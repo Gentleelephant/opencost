@@ -52,6 +52,10 @@ const (
 	RFC3339Milli         = "2006-01-02T15:04:05.000Z"
 	CustomPricingSetting = "CustomPricing"
 	DiscountSetting      = "Discount"
+	defaultQueryCacheTTL = 60 * time.Second
+	queryCacheTTLEnvVar  = "OPENCOST_QUERY_CACHE_TTL_SECONDS"
+	// RoutePrefix is the canonical API path prefix for CostWize routes.
+	RoutePrefix = "/kapis/costwise.wiztelemetry.io/v1alpha1"
 )
 
 var (
@@ -73,12 +77,65 @@ type Accesses struct {
 	ClusterInfoProvider clusters.ClusterInfoProvider
 	Model               *CostModel
 	MetricsEmitter      *CostModelMetricsEmitter
+	QueryCache          *cache.Cache
 	// SettingsCache stores current state of app settings
 	SettingsCache *cache.Cache
 	// settingsSubscribers tracks channels through which changes to different
 	// settings will be published in a pub/sub model
 	settingsSubscribers map[string][]chan string
 	settingsMutex       sync.Mutex
+}
+
+func newQueryCache() *cache.Cache {
+	ttl := queryCacheTTL()
+	if ttl <= 0 {
+		return nil
+	}
+	return cache.New(ttl, 2*ttl)
+}
+
+func queryCacheTTL() time.Duration {
+	seconds := sysenv.GetInt(queryCacheTTLEnvVar, int(defaultQueryCacheTTL.Seconds()))
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func queryCacheKey(endpoint string, r *http.Request) string {
+	if r != nil && r.URL != nil {
+		return fmt.Sprintf("%s:%s?%s", endpoint, r.URL.Path, r.URL.Query().Encode())
+	}
+	return endpoint
+}
+
+func (a *Accesses) getQueryCacheResponse(endpoint string, r *http.Request) ([]byte, bool) {
+	if a == nil || a.QueryCache == nil {
+		return nil, false
+	}
+	val, found := a.QueryCache.Get(queryCacheKey(endpoint, r))
+	if !found {
+		return nil, false
+	}
+	resp, ok := val.([]byte)
+	return resp, ok
+}
+
+func (a *Accesses) setQueryCacheResponse(endpoint string, r *http.Request, resp []byte) {
+	if a == nil || a.QueryCache == nil || len(resp) == 0 {
+		return
+	}
+	a.QueryCache.Set(queryCacheKey(endpoint, r), resp, cache.DefaultExpiration)
+}
+
+func WrapData(data interface{}, err error) []byte {
+	resp := proto.ToResponse(data, err)
+	b, marshalErr := json.Marshal(resp)
+	if marshalErr != nil {
+		log.Errorf("failed to marshal response: %s", marshalErr)
+		return []byte(`{"code":500,"message":"Internal Server Error"}`)
+	}
+	return b
 }
 
 func filterFields(fields string, data map[string]*CostData) map[string]CostData {
@@ -523,6 +580,7 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 
 	clusterMap := dataSource.ClusterMap()
 	settingsCache := cache.New(cache.NoExpiration, cache.NoExpiration)
+	queryCache := newQueryCache()
 
 	costModel := NewCostModel(clusterUID, dataSource, cloudProvider, k8sCache, clusterMap, dataSource.BatchDuration())
 	metricsEmitter := NewCostModelMetricsEmitter(k8sCache, cloudProvider, clusterInfoProvider, costModel)
@@ -537,6 +595,7 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 		ClusterInfoProvider: clusterInfoProvider,
 		Model:               costModel,
 		MetricsEmitter:      metricsEmitter,
+		QueryCache:          queryCache,
 		SettingsCache:       settingsCache,
 	}
 
@@ -553,23 +612,25 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 
 	a.DataSource.RegisterEndPoints(router)
 
-	router.GET("/costDataModel", a.CostDataModel)
-	router.GET("/allocation/compute", a.ComputeAllocationHandler)
-	router.GET("/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
-	router.GET("/allNodePricing", a.GetAllNodePricing)
-	router.POST("/refreshPricing", a.RefreshPricingData)
-	router.GET("/managementPlatform", a.ManagementPlatform)
-	router.GET("/clusterInfo", a.ClusterInfo)
-	router.GET("/clusterInfoMap", a.GetClusterInfoMap)
-	router.GET("/serviceAccountStatus", a.GetServiceAccountStatus)
-	router.GET("/pricingSourceStatus", a.GetPricingSourceStatus)
-	router.GET("/pricingSourceSummary", a.GetPricingSourceSummary)
-	router.GET("/pricingSourceCounts", a.GetPricingSourceCounts)
-	router.GET("/orphanedPods", a.GetOrphanedPods)
-	router.GET("/installNamespace", a.GetInstallNamespace)
-	router.GET("/installInfo", a.GetInstallInfo)
-	router.POST("/serviceKey", adminAuthMiddleware(a.AddServiceKey))
-	router.GET("/helmValues", a.GetHelmValues)
+	router.GET(RoutePrefix+"/costDataModel", a.CostDataModel)
+	router.GET(RoutePrefix+"/allocation/compute", a.ComputeAllocationHandler)
+	router.GET(RoutePrefix+"/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
+	router.GET(RoutePrefix+"/allocation/summary/topline", a.ComputeAllocationHandlerSummaryTopline)
+	router.GET(RoutePrefix+"/efficiency/clusters", a.ComputeAllocationHandlerClusterEfficiencySummary)
+	router.GET(RoutePrefix+"/allNodePricing", a.GetAllNodePricing)
+	router.POST(RoutePrefix+"/refreshPricing", a.RefreshPricingData)
+	router.GET(RoutePrefix+"/managementPlatform", a.ManagementPlatform)
+	router.GET(RoutePrefix+"/clusterInfo", a.ClusterInfo)
+	router.GET(RoutePrefix+"/clusterInfoMap", a.GetClusterInfoMap)
+	router.GET(RoutePrefix+"/serviceAccountStatus", a.GetServiceAccountStatus)
+	router.GET(RoutePrefix+"/pricingSourceStatus", a.GetPricingSourceStatus)
+	router.GET(RoutePrefix+"/pricingSourceSummary", a.GetPricingSourceSummary)
+	router.GET(RoutePrefix+"/pricingSourceCounts", a.GetPricingSourceCounts)
+	router.GET(RoutePrefix+"/orphanedPods", a.GetOrphanedPods)
+	router.GET(RoutePrefix+"/installNamespace", a.GetInstallNamespace)
+	router.GET(RoutePrefix+"/installInfo", a.GetInstallInfo)
+	router.POST(RoutePrefix+"/serviceKey", adminAuthMiddleware(a.AddServiceKey))
+	router.GET(RoutePrefix+"/helmValues", a.GetHelmValues)
 
 	return a
 }
@@ -616,18 +677,18 @@ func InitializeCloudCost(router *httprouter.Router) *cloudcost.PipelineService {
 	repoQuerier := cloudcost.NewRepositoryQuerier(repo)
 	cloudCostQueryService := cloudcost.NewQueryService(repoQuerier, repoQuerier)
 
-	router.GET("/cloudCost", cloudCostQueryService.GetCloudCostHandler())
-	router.GET("/cloudCost/view/graph", cloudCostQueryService.GetCloudCostViewGraphHandler())
-	router.GET("/cloudCost/view/totals", cloudCostQueryService.GetCloudCostViewTotalsHandler())
-	router.GET("/cloudCost/view/table", cloudCostQueryService.GetCloudCostViewTableHandler(nil))
+	router.GET(RoutePrefix+"/cloudCost", cloudCostQueryService.GetCloudCostHandler())
+	router.GET(RoutePrefix+"/cloudCost/view/graph", cloudCostQueryService.GetCloudCostViewGraphHandler())
+	router.GET(RoutePrefix+"/cloudCost/view/totals", cloudCostQueryService.GetCloudCostViewTotalsHandler())
+	router.GET(RoutePrefix+"/cloudCost/view/table", cloudCostQueryService.GetCloudCostViewTableHandler(nil))
 
-	router.GET("/cloudCost/status", cloudCostPipelineService.GetCloudCostStatusHandler())
-	router.GET("/cloudCost/rebuild", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRebuildHandler()))
-	router.GET("/cloudCost/repair", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRepairHandler()))
-	router.GET("/cloud/config/export", adminAuthMiddleware(cloudConfigController.GetExportConfigHandler()))
-	router.GET("/cloud/config/enable", adminAuthMiddleware(cloudConfigController.GetEnableConfigHandler()))
-	router.GET("/cloud/config/disable", adminAuthMiddleware(cloudConfigController.GetDisableConfigHandler()))
-	router.GET("/cloud/config/delete", adminAuthMiddleware(cloudConfigController.GetDeleteConfigHandler()))
+	router.GET(RoutePrefix+"/cloudCost/status", cloudCostPipelineService.GetCloudCostStatusHandler())
+	router.GET(RoutePrefix+"/cloudCost/rebuild", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRebuildHandler()))
+	router.GET(RoutePrefix+"/cloudCost/repair", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRepairHandler()))
+	router.GET(RoutePrefix+"/cloud/config/export", adminAuthMiddleware(cloudConfigController.GetExportConfigHandler()))
+	router.GET(RoutePrefix+"/cloud/config/enable", adminAuthMiddleware(cloudConfigController.GetEnableConfigHandler()))
+	router.GET(RoutePrefix+"/cloud/config/disable", adminAuthMiddleware(cloudConfigController.GetDisableConfigHandler()))
+	router.GET(RoutePrefix+"/cloud/config/delete", adminAuthMiddleware(cloudConfigController.GetDeleteConfigHandler()))
 
 	return cloudCostPipelineService
 }
@@ -646,8 +707,8 @@ func InitializeCustomCost(router *httprouter.Router) *customcost.PipelineService
 	customCostQuerier := customcost.NewRepositoryQuerier(hourlyRepo, dailyRepo, ingConfig.HourlyDuration, ingConfig.DailyDuration)
 	customCostQueryService := customcost.NewQueryService(customCostQuerier)
 
-	router.GET("/customCost/total", customCostQueryService.GetCustomCostTotalHandler())
-	router.GET("/customCost/timeseries", customCostQueryService.GetCustomCostTimeseriesHandler())
+	router.GET(RoutePrefix+"/customCost/total", customCostQueryService.GetCustomCostTotalHandler())
+	router.GET(RoutePrefix+"/customCost/timeseries", customCostQueryService.GetCustomCostTimeseriesHandler())
 
 	return customCostPipelineService
 }

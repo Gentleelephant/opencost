@@ -9,6 +9,8 @@ import (
 	"github.com/julienschmidt/httprouter"
 
 	"github.com/opencost/opencost/core/pkg/filter/allocation"
+	"github.com/opencost/opencost/core/pkg/filter/ast"
+	"github.com/opencost/opencost/core/pkg/filter/matcher"
 	"github.com/opencost/opencost/core/pkg/opencost"
 	"github.com/opencost/opencost/core/pkg/util/httputil"
 	"github.com/opencost/opencost/core/pkg/util/timeutil"
@@ -202,8 +204,99 @@ func trimAllocationSetRangeToRequestWindow(asr *opencost.AllocationSetRange, req
 	return trimmed
 }
 
+func buildAllocationFilter(filterString string) (opencost.AllocationMatcher, error) {
+	if filterString == "" {
+		return &matcher.AllPass[*opencost.Allocation]{}, nil
+	}
+
+	filterString = normalizeAllocationFilterString(filterString)
+
+	parser := allocation.NewAllocationFilterParser()
+	tree, err := parser.Parse(filterString)
+	if err != nil {
+		return nil, fmt.Errorf("err parsing filter '%s': %v", ast.ToPreOrderShortString(tree), err)
+	}
+
+	compiler := opencost.NewAllocationMatchCompiler(nil)
+	filter, err := compiler.Compile(tree)
+	if err != nil {
+		return nil, fmt.Errorf("err compiling filter '%s': %v", ast.ToPreOrderShortString(tree), err)
+	}
+	if filter == nil {
+		return nil, fmt.Errorf("unexpected nil filter")
+	}
+
+	return filter, nil
+}
+
+func normalizeAllocationFilterString(filter string) string {
+	var builder strings.Builder
+	builder.Grow(len(filter) + 8)
+
+	inQuotes := false
+	lastSig := byte(0)
+
+	for i := 0; i < len(filter); {
+		ch := filter[i]
+		if ch == '"' {
+			inQuotes = !inQuotes
+			builder.WriteByte(ch)
+			lastSig = ch
+			i++
+			continue
+		}
+		if inQuotes {
+			builder.WriteByte(ch)
+			lastSig = ch
+			i++
+			continue
+		}
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+			j := i + 1
+			for j < len(filter) {
+				next := filter[j]
+				if next != ' ' && next != '\t' && next != '\n' && next != '\r' {
+					break
+				}
+				j++
+			}
+			var nextSig byte
+			if j < len(filter) {
+				nextSig = filter[j]
+			}
+			if isImplicitAllocationAndBoundary(lastSig, nextSig) {
+				builder.WriteString(" + ")
+				lastSig = '+'
+			}
+			i = j
+			continue
+		}
+		builder.WriteByte(ch)
+		lastSig = ch
+		i++
+	}
+
+	return builder.String()
+}
+
+func isImplicitAllocationAndBoundary(prev, next byte) bool {
+	return isAllocationFilterExprEnd(prev) && isAllocationFilterExprStart(next)
+}
+
+func isAllocationFilterExprEnd(ch byte) bool {
+	return ch == '"' || ch == ')'
+}
+
+func isAllocationFilterExprStart(ch byte) bool {
+	return ch == '(' || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+}
+
 func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
+	if resp, ok := a.getQueryCacheResponse("allocation-summary", r); ok {
+		w.Write(resp)
+		return
+	}
 
 	qp := httputil.NewQueryParams(r.URL.Query())
 
@@ -269,23 +362,16 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 
 	// Apply allocation filter if provided
 	if allocationFilter != "" {
-		parser := allocation.NewAllocationFilterParser()
-		filterNode, err := parser.Parse(allocationFilter)
+		allocationMatcher, err := buildAllocationFilter(allocationFilter)
 		if err != nil {
 			proto.WriteError(w, proto.BadRequest(fmt.Sprintf("Invalid filter: %s", err)))
-			return
-		}
-		compiler := opencost.NewAllocationMatchCompiler(nil)
-		matcher, err := compiler.Compile(filterNode)
-		if err != nil {
-			proto.WriteError(w, proto.BadRequest(fmt.Sprintf("Failed to compile filter: %s", err)))
 			return
 		}
 		filteredASR := opencost.NewAllocationSetRange()
 		for _, as := range asr.Allocations {
 			filteredAS := opencost.NewAllocationSet(as.Start(), as.End())
 			for _, alloc := range as.Allocations {
-				if matcher.Matches(alloc) {
+				if allocationMatcher.Matches(alloc) {
 					filteredAS.Set(alloc)
 				}
 			}
@@ -323,12 +409,294 @@ func (a *Accesses) ComputeAllocationHandlerSummary(w http.ResponseWriter, r *htt
 	}
 	sasr := opencost.NewSummaryAllocationSetRange(sasl...)
 
-	WriteData(w, sasr, nil)
+	resp := WrapData(sasr.ToResponse(), nil)
+	a.setQueryCacheResponse("allocation-summary", r, resp)
+	w.Write(resp)
+}
+
+type SummaryAllocationToplineResponse struct {
+	NumResults int                                  `json:"numResults"`
+	Combined   *SummaryAllocationSetToplineResponse `json:"combined"`
+}
+
+type SummaryAllocationSetToplineResponse struct {
+	Allocations map[string]*SummaryAllocationToplineItem `json:"allocations"`
+	Window      opencost.Window                          `json:"window"`
+}
+
+type SummaryAllocationToplineItem struct {
+	Name                   string    `json:"name"`
+	Start                  time.Time `json:"start"`
+	End                    time.Time `json:"end"`
+	CPUCoreRequestAverage  float64   `json:"cpuCoreRequestAverage"`
+	CPUCoreUsageAverage    float64   `json:"cpuCoreUsageAverage"`
+	CPUCost                float64   `json:"cpuCost"`
+	CPUCostIdle            float64   `json:"cpuCostIdle"`
+	GPURequestAverage      float64   `json:"gpuRequestAverage"`
+	GPUUsageAverage        float64   `json:"gpuUsageAverage"`
+	GPUCost                float64   `json:"gpuCost"`
+	GPUCostIdle            float64   `json:"gpuCostIdle"`
+	NetworkCost            float64   `json:"networkCost"`
+	LoadBalancerCost       float64   `json:"loadBalancerCost"`
+	PVCost                 float64   `json:"pvCost"`
+	RAMBytesRequestAverage float64   `json:"ramByteRequestAverage"`
+	RAMBytesUsageAverage   float64   `json:"ramByteUsageAverage"`
+	RAMCost                float64   `json:"ramCost"`
+	RAMCostIdle            float64   `json:"ramCostIdle"`
+	SharedCost             float64   `json:"sharedCost"`
+	ExternalCost           float64   `json:"externalCost"`
+	Efficiency             float64   `json:"efficiency"`
+}
+
+func (a *Accesses) ComputeAllocationHandlerSummaryTopline(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+
+	qp := httputil.NewQueryParams(r.URL.Query())
+
+	window, err := opencost.ParseWindowWithOffset(qp.Get("window", ""), env.GetParsedUTCOffset())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'window' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	accumulateOpt := resolveAccumulateFromQuery(qp)
+	accumulateBy, err := resolveAccumulateOption(accumulateOpt, qp.Get("accumulateBy", ""))
+	if err != nil {
+		proto.WriteError(w, proto.BadRequest(fmt.Sprintf("Invalid 'accumulateBy' parameter: %s", err)))
+		return
+	}
+	step, err := resolveStepFromQuery(qp, window, accumulateBy)
+	if err != nil {
+		proto.WriteError(w, proto.BadRequest(fmt.Sprintf("Invalid step parameter: %s", err)))
+		return
+	}
+
+	aggregateBy, err := ParseAggregationProperties(qp.GetList("aggregate", ","))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'aggregate' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	includeIdle := qp.GetBool("idle", qp.GetBool("includeIdle", false))
+	idleByNode := qp.GetBool("idleByNode", false)
+	shareIdle := qp.GetBool("shareIdle", false)
+
+	asr, err := a.Model.QueryAllocation(window, step, aggregateBy, includeIdle, idleByNode, false, false, false, accumulateBy, shareIdle, qp.Get("filter", ""))
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "bad request") {
+			proto.WriteError(w, proto.BadRequest(err.Error()))
+		} else {
+			proto.WriteError(w, proto.InternalServerError(err.Error()))
+		}
+		return
+	}
+
+	sasl := make([]*opencost.SummaryAllocationSet, 0, len(asr.Allocations))
+	for _, as := range asr.Allocations {
+		sasl = append(sasl, opencost.NewSummaryAllocationSet(as, nil, nil, false, false))
+	}
+
+	resp, err := buildSummaryAllocationToplineResponse(opencost.NewSummaryAllocationSetRange(sasl...))
+	if err != nil {
+		proto.WriteError(w, proto.InternalServerError(err.Error()))
+		return
+	}
+
+	w.Write(WrapData(resp, nil))
+}
+
+func buildSummaryAllocationToplineResponse(sasr *opencost.SummaryAllocationSetRange) (*SummaryAllocationToplineResponse, error) {
+	if sasr == nil {
+		return &SummaryAllocationToplineResponse{
+			Combined: &SummaryAllocationSetToplineResponse{
+				Allocations: map[string]*SummaryAllocationToplineItem{},
+				Window:      opencost.NewWindow(nil, nil),
+			},
+		}, nil
+	}
+
+	total, numResults := summarizeSummaryAllocationSetRange(sasr)
+	if total == nil {
+		return &SummaryAllocationToplineResponse{
+			Combined: &SummaryAllocationSetToplineResponse{
+				Allocations: map[string]*SummaryAllocationToplineItem{},
+				Window:      sasr.Window.Clone(),
+			},
+		}, nil
+	}
+
+	return &SummaryAllocationToplineResponse{
+		NumResults: numResults,
+		Combined: &SummaryAllocationSetToplineResponse{
+			Allocations: map[string]*SummaryAllocationToplineItem{
+				"total": summaryAllocationToToplineItem(total),
+			},
+			Window: sasr.Window.Clone(),
+		},
+	}, nil
+}
+
+func summarizeSummaryAllocationSetRange(sasr *opencost.SummaryAllocationSetRange) (*opencost.SummaryAllocation, int) {
+	if sasr == nil {
+		return nil, 0
+	}
+
+	var total *opencost.SummaryAllocation
+	numResults := 0
+	for _, sas := range sasr.SummaryAllocationSets {
+		if sas == nil {
+			continue
+		}
+		numResults += len(sas.SummaryAllocations)
+		setTotal := summarizeSummaryAllocationSet(sas)
+		if setTotal == nil {
+			continue
+		}
+		if total == nil {
+			total = setTotal
+			total.Name = "total"
+			continue
+		}
+		_ = total.Add(setTotal)
+		total.CPUCostIdle += setTotal.CPUCostIdle
+		total.GPUCostIdle += setTotal.GPUCostIdle
+		total.RAMCostIdle += setTotal.RAMCostIdle
+	}
+	return total, numResults
+}
+
+func summarizeSummaryAllocationSet(sas *opencost.SummaryAllocationSet) *opencost.SummaryAllocation {
+	if sas == nil {
+		return nil
+	}
+	var total *opencost.SummaryAllocation
+	for _, sa := range sas.SummaryAllocations {
+		if sa == nil {
+			continue
+		}
+		if total == nil {
+			total = &opencost.SummaryAllocation{
+				Name:                   "total",
+				Start:                  sa.Start,
+				End:                    sa.End,
+				CPUCoreRequestAverage:  sa.CPUCoreRequestAverage,
+				CPUCoreUsageAverage:    sa.CPUCoreUsageAverage,
+				CPUCost:                sa.CPUCost,
+				CPUCostIdle:            sa.CPUCostIdle,
+				GPURequestAverage:      sa.GPURequestAverage,
+				GPUUsageAverage:        sa.GPUUsageAverage,
+				GPUCost:                sa.GPUCost,
+				GPUCostIdle:            sa.GPUCostIdle,
+				NetworkCost:            sa.NetworkCost,
+				LoadBalancerCost:       sa.LoadBalancerCost,
+				PVCost:                 sa.PVCost,
+				RAMBytesRequestAverage: sa.RAMBytesRequestAverage,
+				RAMBytesUsageAverage:   sa.RAMBytesUsageAverage,
+				RAMCost:                sa.RAMCost,
+				RAMCostIdle:            sa.RAMCostIdle,
+				SharedCost:             sa.SharedCost,
+				ExternalCost:           sa.ExternalCost,
+				Efficiency:             sa.Efficiency,
+			}
+			continue
+		}
+		_ = total.Add(sa)
+		total.CPUCostIdle += sa.CPUCostIdle
+		total.GPUCostIdle += sa.GPUCostIdle
+		total.RAMCostIdle += sa.RAMCostIdle
+	}
+	return total
+}
+
+func summaryAllocationToToplineItem(sa *opencost.SummaryAllocation) *SummaryAllocationToplineItem {
+	if sa == nil {
+		return nil
+	}
+
+	var gpuRequestAverage float64
+	if sa.GPURequestAverage != nil {
+		gpuRequestAverage = *sa.GPURequestAverage
+	}
+	var gpuUsageAverage float64
+	if sa.GPUUsageAverage != nil {
+		gpuUsageAverage = *sa.GPUUsageAverage
+	}
+
+	return &SummaryAllocationToplineItem{
+		Name:                   sa.Name,
+		Start:                  sa.Start,
+		End:                    sa.End,
+		CPUCoreRequestAverage:  sa.CPUCoreRequestAverage,
+		CPUCoreUsageAverage:    sa.CPUCoreUsageAverage,
+		CPUCost:                sa.CPUCost,
+		CPUCostIdle:            sa.CPUCostIdle,
+		GPURequestAverage:      gpuRequestAverage,
+		GPUUsageAverage:        gpuUsageAverage,
+		GPUCost:                sa.GPUCost,
+		GPUCostIdle:            sa.GPUCostIdle,
+		NetworkCost:            sa.NetworkCost,
+		LoadBalancerCost:       sa.LoadBalancerCost,
+		PVCost:                 sa.PVCost,
+		RAMBytesRequestAverage: sa.RAMBytesRequestAverage,
+		RAMBytesUsageAverage:   sa.RAMBytesUsageAverage,
+		RAMCost:                sa.RAMCost,
+		RAMCostIdle:            sa.RAMCostIdle,
+		SharedCost:             sa.SharedCost,
+		ExternalCost:           sa.ExternalCost,
+		Efficiency:             sa.Efficiency,
+	}
+}
+
+func (a *Accesses) ComputeAllocationHandlerClusterEfficiencySummary(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+
+	qp := httputil.NewQueryParams(r.URL.Query())
+
+	window, err := opencost.ParseWindowWithOffset(qp.Get("window", ""), env.GetParsedUTCOffset())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid 'window' parameter: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	accumulateBy := opencost.AccumulateOptionNone
+	if qp.GetBool("accumulate", false) {
+		accumulateBy = opencost.AccumulateOptionAll
+	}
+	step, err := resolveStepFromQuery(qp, window, accumulateBy)
+	if err != nil {
+		proto.WriteError(w, proto.BadRequest(fmt.Sprintf("Invalid step parameter: %s", err)))
+		return
+	}
+
+	asr, err := a.Model.QueryAllocation(window, step, nil, true, false, false, false, false, accumulateBy, false, qp.Get("filter", ""))
+	if err != nil {
+		proto.WriteError(w, proto.InternalServerError(err.Error()))
+		return
+	}
+
+	sasl := make([]*opencost.SummaryAllocationSet, 0, len(asr.Slice()))
+	for _, as := range asr.Slice() {
+		sas := opencost.NewSummaryAllocationSet(as, nil, nil, false, false)
+		if err := sas.AggregateBy([]string{opencost.AllocationClusterProp}, &opencost.AllocationAggregationOptions{
+			ShareIdle: opencost.ShareNone,
+			SplitIdle: true,
+		}); err != nil {
+			proto.WriteError(w, proto.InternalServerError(err.Error()))
+			return
+		}
+		sasl = append(sasl, sas)
+	}
+
+	w.Write(WrapData(opencost.NewSummaryAllocationSetRange(sasl...).ClusterEfficiencySetRange(), nil))
 }
 
 // ComputeAllocationHandler computes an AllocationSetRange from the CostModel.
 func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
+	if resp, ok := a.getQueryCacheResponse("allocation", r); ok {
+		w.Write(resp)
+		return
+	}
 
 	qp := httputil.NewQueryParams(r.URL.Query())
 
@@ -403,5 +771,7 @@ func (a *Accesses) ComputeAllocationHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	WriteData(w, asr, nil)
+	resp := WrapData(asr, nil)
+	a.setQueryCacheResponse("allocation", r, resp)
+	w.Write(resp)
 }

@@ -160,6 +160,11 @@ func TestFailingParses(t *testing.T) {
 			errors: 1,
 		},
 		{
+			name:   "Trailing Comparison Without Operator",
+			input:  `cluster:"host" namespace:"default"`,
+			errors: 1,
+		},
+		{
 			name:   "And Or Mixing With Extra Closing Paren",
 			input:  `(namespace:"kubecost" + (services~:"foo" | cluster:"bar") | controllerKind<~:"dep"))`,
 			errors: 2,
@@ -184,7 +189,10 @@ func TestFailingParses(t *testing.T) {
 			t.Logf("Errors: %s\n", err)
 
 			mErr := errors.Unwrap(err)
-			totalErrors := len(mErr.(*multierror.Error).Errors)
+			totalErrors := 1
+			if mm, ok := mErr.(*multierror.Error); ok {
+				totalErrors = len(mm.Errors)
+			}
 			if totalErrors != c.errors {
 				t.Fatalf("Expected %d errors from parsing. Got %d", c.errors, totalErrors)
 			}

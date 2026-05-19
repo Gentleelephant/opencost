@@ -34,6 +34,158 @@ func TestParseAggregationProperties_Default(t *testing.T) {
 	}
 }
 
+func TestNormalizeAllocationFilterString_ImplicitAnd(t *testing.T) {
+	input := `cluster:"host"   namespace:"default"`
+	expected := `cluster:"host" + namespace:"default"`
+
+	got := normalizeAllocationFilterString(input)
+	if got != expected {
+		t.Fatalf("expected normalized filter %q, got %q", expected, got)
+	}
+}
+
+func TestBuildAllocationFilter_ImplicitAndMatchesBothClauses(t *testing.T) {
+	filter, err := buildAllocationFilter(`cluster:"host" namespace:"default"`)
+	if err != nil {
+		t.Fatalf("unexpected error building filter: %v", err)
+	}
+
+	matching := &opencost.Allocation{
+		Properties: &opencost.AllocationProperties{
+			Cluster:   "host",
+			Namespace: "default",
+		},
+	}
+	if !filter.Matches(matching) {
+		t.Fatalf("expected filter to match allocation with cluster=host and namespace=default")
+	}
+
+	nonMatching := &opencost.Allocation{
+		Properties: &opencost.AllocationProperties{
+			Cluster:   "host",
+			Namespace: "kube-system",
+		},
+	}
+	if filter.Matches(nonMatching) {
+		t.Fatalf("expected filter not to match allocation with namespace=kube-system")
+	}
+}
+
+func TestBuildSummaryAllocationToplineResponse(t *testing.T) {
+	start := time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)
+	mid := start.Add(24 * time.Hour)
+	end := start.Add(48 * time.Hour)
+
+	sas := &opencost.SummaryAllocationSet{
+		SummaryAllocations: map[string]*opencost.SummaryAllocation{
+			"ns-a": {
+				Name:                   "ns-a",
+				Start:                  start,
+				End:                    mid,
+				CPUCoreRequestAverage:  2,
+				CPUCoreUsageAverage:    1,
+				CPUCost:                10,
+				CPUCostIdle:            3,
+				GPUCostIdle:            1,
+				PVCost:                 1.5,
+				RAMBytesRequestAverage: 100,
+				RAMBytesUsageAverage:   80,
+				RAMCost:                4,
+				RAMCostIdle:            1,
+				Efficiency:             0,
+			},
+			"ns-b": {
+				Name:                   "ns-b",
+				Start:                  mid,
+				End:                    end,
+				CPUCoreRequestAverage:  4,
+				CPUCoreUsageAverage:    2,
+				CPUCost:                20,
+				CPUCostIdle:            5,
+				GPUCostIdle:            2,
+				PVCost:                 2.5,
+				RAMBytesRequestAverage: 200,
+				RAMBytesUsageAverage:   120,
+				RAMCost:                6,
+				RAMCostIdle:            2,
+				Efficiency:             0,
+			},
+		},
+		Window: opencost.NewClosedWindow(start, end),
+	}
+
+	resp, err := buildSummaryAllocationToplineResponse(opencost.NewSummaryAllocationSetRange(sas))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.NumResults != 2 {
+		t.Fatalf("expected numResults=2, got %d", resp.NumResults)
+	}
+
+	total := resp.Combined.Allocations["total"]
+	if total == nil {
+		t.Fatalf("expected combined.allocations.total to be present")
+	}
+
+	if total.Name != "total" {
+		t.Fatalf("expected total name to be total, got %q", total.Name)
+	}
+
+	if total.CPUCost != 30 {
+		t.Fatalf("expected total CPU cost 30, got %f", total.CPUCost)
+	}
+
+	if total.PVCost != 4 {
+		t.Fatalf("expected total PV cost 4, got %f", total.PVCost)
+	}
+
+	if total.RAMCost != 10 {
+		t.Fatalf("expected total RAM cost 10, got %f", total.RAMCost)
+	}
+
+	if total.CPUCostIdle != 8 {
+		t.Fatalf("expected total CPU idle cost 8, got %f", total.CPUCostIdle)
+	}
+
+	if total.GPUCostIdle != 3 {
+		t.Fatalf("expected total GPU idle cost 3, got %f", total.GPUCostIdle)
+	}
+
+	if total.RAMCostIdle != 3 {
+		t.Fatalf("expected total RAM idle cost 3, got %f", total.RAMCostIdle)
+	}
+
+	if total.Start != start {
+		t.Fatalf("expected total start %s, got %s", start, total.Start)
+	}
+
+	if total.End != end {
+		t.Fatalf("expected total end %s, got %s", end, total.End)
+	}
+}
+
+func TestSummaryAllocationToToplineItem_PreservesExplicitZeroEfficiency(t *testing.T) {
+	item := summaryAllocationToToplineItem(&opencost.SummaryAllocation{
+		Name:                  "ns-a",
+		Start:                 time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC),
+		End:                   time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC),
+		CPUCoreRequestAverage: 4,
+		CPUCoreUsageAverage:   0,
+		CPUCost:               10,
+		RAMCost:               5,
+		Efficiency:            0,
+	})
+
+	if item == nil {
+		t.Fatalf("expected non-nil item")
+	}
+
+	if item.Efficiency != 0 {
+		t.Fatalf("expected explicit zero efficiency to be preserved, got %f", item.Efficiency)
+	}
+}
+
 func TestParseAggregationProperties_All(t *testing.T) {
 	got, err := ParseAggregationProperties([]string{"all"})
 
