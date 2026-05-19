@@ -51,12 +51,8 @@ func Execute(conf *Config) error {
 		}
 
 		// Register OpenCost Specific Endpoints
-		router.GET("/allocation", a.ComputeAllocationHandler)
-		router.GET("/allocation/summary", a.ComputeAllocationHandlerSummary)
-		router.GET("/assets", a.ComputeAssetsHandler)
-		if conf.CarbonEstimatesEnabled {
-			router.GET("/assets/carbon", a.ComputeAssetsCarbonHandler)
-		}
+		registerOpenCostUIRoutes(router, a, "", conf.CarbonEstimatesEnabled)
+		registerOpenCostUIRoutes(router, a, costmodel.RoutePrefix, conf.CarbonEstimatesEnabled)
 
 	}
 
@@ -74,6 +70,7 @@ func Execute(conf *Config) error {
 	// this endpoint is intentionally left out of the "if env.IsCustomCostEnabled()" conditional; in the handler, it is
 	// valid for CustomCostPipelineService to be nil
 	router.GET("/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
+	router.GET(costmodel.RoutePrefix+"/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
 
 	// Initialize MCP Server if enabled and Kubernetes is available
 	if conf.MCPServerEnabled && a != nil {
@@ -138,6 +135,15 @@ func Execute(conf *Config) error {
 
 		log.Infof("Graceful shutdown completed")
 		return nil
+	}
+}
+
+func registerOpenCostUIRoutes(router *httprouter.Router, a *costmodel.Accesses, prefix string, carbonEstimatesEnabled bool) {
+	router.GET(prefix+"/allocation", a.ComputeAllocationHandler)
+	router.GET(prefix+"/allocation/summary", a.ComputeAllocationHandlerSummary)
+	router.GET(prefix+"/assets", a.ComputeAssetsHandler)
+	if carbonEstimatesEnabled {
+		router.GET(prefix+"/assets/carbon", a.ComputeAssetsCarbonHandler)
 	}
 }
 

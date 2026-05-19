@@ -52,6 +52,7 @@ const (
 	RFC3339Milli         = "2006-01-02T15:04:05.000Z"
 	CustomPricingSetting = "CustomPricing"
 	DiscountSetting      = "Discount"
+	RoutePrefix          = "/kapis/costwise.wiztelemetry.io/v1alpha1"
 )
 
 var (
@@ -561,26 +562,31 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 
 	a.DataSource.RegisterEndPoints(router)
 
-	router.GET("/costDataModel", a.CostDataModel)
-	router.GET("/allocation/compute", a.ComputeAllocationHandler)
-	router.GET("/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
-	router.GET("/allNodePricing", a.GetAllNodePricing)
-	router.GET("/customPricing", a.GetCustomPricing)
-	router.POST("/refreshPricing", a.RefreshPricingData)
-	router.GET("/managementPlatform", a.ManagementPlatform)
-	router.GET("/clusterInfo", a.ClusterInfo)
-	router.GET("/clusterInfoMap", a.GetClusterInfoMap)
-	router.GET("/serviceAccountStatus", a.GetServiceAccountStatus)
-	router.GET("/pricingSourceStatus", a.GetPricingSourceStatus)
-	router.GET("/pricingSourceSummary", a.GetPricingSourceSummary)
-	router.GET("/pricingSourceCounts", a.GetPricingSourceCounts)
-	router.GET("/orphanedPods", a.GetOrphanedPods)
-	router.GET("/installNamespace", a.GetInstallNamespace)
-	router.GET("/installInfo", a.GetInstallInfo)
-	router.POST("/serviceKey", adminAuthMiddleware(a.AddServiceKey))
-	router.GET("/helmValues", a.GetHelmValues)
+	a.registerCostModelRoutes(router, "")
+	a.registerCostModelRoutes(router, RoutePrefix)
 
 	return a
+}
+
+func (a *Accesses) registerCostModelRoutes(router *httprouter.Router, prefix string) {
+	router.GET(prefix+"/costDataModel", a.CostDataModel)
+	router.GET(prefix+"/allocation/compute", a.ComputeAllocationHandler)
+	router.GET(prefix+"/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
+	router.GET(prefix+"/allNodePricing", a.GetAllNodePricing)
+	router.GET(prefix+"/customPricing", a.GetCustomPricing)
+	router.POST(prefix+"/refreshPricing", a.RefreshPricingData)
+	router.GET(prefix+"/managementPlatform", a.ManagementPlatform)
+	router.GET(prefix+"/clusterInfo", a.ClusterInfo)
+	router.GET(prefix+"/clusterInfoMap", a.GetClusterInfoMap)
+	router.GET(prefix+"/serviceAccountStatus", a.GetServiceAccountStatus)
+	router.GET(prefix+"/pricingSourceStatus", a.GetPricingSourceStatus)
+	router.GET(prefix+"/pricingSourceSummary", a.GetPricingSourceSummary)
+	router.GET(prefix+"/pricingSourceCounts", a.GetPricingSourceCounts)
+	router.GET(prefix+"/orphanedPods", a.GetOrphanedPods)
+	router.GET(prefix+"/installNamespace", a.GetInstallNamespace)
+	router.GET(prefix+"/installInfo", a.GetInstallInfo)
+	router.POST(prefix+"/serviceKey", adminAuthMiddleware(a.AddServiceKey))
+	router.GET(prefix+"/helmValues", a.GetHelmValues)
 }
 
 // GetDefaultStorage retrieves the default shared storage which is required for running an opencost collector.
