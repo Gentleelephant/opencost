@@ -114,3 +114,7 @@ build IMAGE_TAG RELEASE_VERSION: (build-binary RELEASE_VERSION)
 validate-protobuf:
     ./generate.sh
     git diff --exit-code
+
+# regenerate swagger docs
+swagger:
+    ./tools/update-swagger.sh

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/julienschmidt/httprouter"
 	"github.com/opencost/opencost/pkg/costmodel"
 	"github.com/opencost/opencost/pkg/env"
 )
@@ -63,5 +64,33 @@ func TestShutdownTimeoutConstant(t *testing.T) {
 func TestGracefulShutdownConfiguration(t *testing.T) {
 	if shutdownTimeout < 5*time.Second {
 		t.Error("Shutdown timeout is too short for graceful shutdown")
+	}
+}
+
+func TestRegisterOpenCostUIRoutesRegistersPrefixedAndLegacyRoutes(t *testing.T) {
+	router := httprouter.New()
+	accesses := &costmodel.Accesses{}
+
+	registerOpenCostUIRoutes(router, accesses, true)
+
+	testCases := []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/allocation"},
+		{method: http.MethodGet, path: costmodel.RoutePrefix + "/allocation"},
+		{method: http.MethodGet, path: "/allocation/summary/topline"},
+		{method: http.MethodGet, path: costmodel.RoutePrefix + "/allocation/summary/topline"},
+		{method: http.MethodGet, path: "/assets/graph"},
+		{method: http.MethodGet, path: costmodel.RoutePrefix + "/assets/graph"},
+		{method: http.MethodGet, path: "/assets/carbon"},
+		{method: http.MethodGet, path: costmodel.RoutePrefix + "/assets/carbon"},
+	}
+
+	for _, tc := range testCases {
+		handle, _, _ := router.Lookup(tc.method, tc.path)
+		if handle == nil {
+			t.Fatalf("expected route %s %s to be registered", tc.method, tc.path)
+		}
 	}
 }

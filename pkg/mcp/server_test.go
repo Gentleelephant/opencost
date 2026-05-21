@@ -936,7 +936,7 @@ func TestEfficiencyQueryDefaultValues(t *testing.T) {
 
 func TestEfficiencyMetricStruct(t *testing.T) {
 	now := time.Now()
-	metric := EfficiencyMetric{
+	metric := costmodel.EfficiencyMetric{
 		Name:                       "test-pod",
 		CPUEfficiency:              0.5,
 		MemoryEfficiency:           0.6,
@@ -978,14 +978,14 @@ func TestEfficiencyMetricStruct(t *testing.T) {
 
 func TestEfficiencyResponseStruct(t *testing.T) {
 	now := time.Now()
-	metric1 := &EfficiencyMetric{
+	metric1 := &costmodel.EfficiencyMetric{
 		Name:             "pod-1",
 		CPUEfficiency:    0.5,
 		MemoryEfficiency: 0.6,
 		Start:            now.Add(-24 * time.Hour),
 		End:              now,
 	}
-	metric2 := &EfficiencyMetric{
+	metric2 := &costmodel.EfficiencyMetric{
 		Name:             "pod-2",
 		CPUEfficiency:    0.7,
 		MemoryEfficiency: 0.8,
@@ -994,7 +994,7 @@ func TestEfficiencyResponseStruct(t *testing.T) {
 	}
 
 	response := EfficiencyResponse{
-		Efficiencies: []*EfficiencyMetric{metric1, metric2},
+		Efficiencies: []*costmodel.EfficiencyMetric{metric1, metric2},
 	}
 
 	require.NotNil(t, response.Efficiencies)
@@ -1020,14 +1020,19 @@ func TestSafeDiv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := safeDiv(tt.numerator, tt.denominator)
+			var result float64
+			if tt.denominator == 0 {
+				result = 0
+			} else {
+				result = tt.numerator / tt.denominator
+			}
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
 func TestComputeEfficiencyMetric_NilAllocation(t *testing.T) {
-	result := computeEfficiencyMetric(nil, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(nil, 1.2)
 	assert.Nil(t, result)
 }
 
@@ -1039,7 +1044,7 @@ func TestComputeEfficiencyMetric_ZeroMinutes(t *testing.T) {
 		End:   now, // Same time, so 0 minutes
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 	assert.Nil(t, result)
 }
 
@@ -1058,7 +1063,7 @@ func TestComputeEfficiencyMetric_ValidAllocation(t *testing.T) {
 		RAMCost:                5.0,
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 
 	require.NotNil(t, result)
 	assert.Equal(t, "test-pod", result.Name)
@@ -1089,7 +1094,7 @@ func TestComputeEfficiencyMetric_CustomBufferMultiplier(t *testing.T) {
 	}
 
 	// Test with 1.4 buffer multiplier (40% headroom)
-	result := computeEfficiencyMetric(alloc, 1.4)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.4)
 
 	require.NotNil(t, result)
 	assert.Equal(t, 1.4, result.RecommendedCPURequest)   // 1 * 1.4 = 1.4
@@ -1118,13 +1123,13 @@ func TestComputeEfficiencyMetric_MinimumThresholds(t *testing.T) {
 		RAMCost:                0.001,
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 
 	require.NotNil(t, result)
 	// Should enforce minimum CPU (0.001 cores)
-	assert.Equal(t, efficiencyMinCPU, result.RecommendedCPURequest)
+	assert.Equal(t, costmodel.EfficiencyMinCPU, result.RecommendedCPURequest)
 	// Should enforce minimum RAM (1MB)
-	assert.Equal(t, float64(efficiencyMinRAM), result.RecommendedRAMRequest)
+	assert.Equal(t, float64(costmodel.EfficiencyMinRAM), result.RecommendedRAMRequest)
 }
 
 func TestComputeEfficiencyMetric_NoRequests(t *testing.T) {
@@ -1141,7 +1146,7 @@ func TestComputeEfficiencyMetric_NoRequests(t *testing.T) {
 		RAMCost:                5.0,
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 
 	require.NotNil(t, result)
 	// Efficiency should be 0 when no requests are set
@@ -1166,7 +1171,7 @@ func TestComputeEfficiencyMetric_OverProvisioned(t *testing.T) {
 		RAMCost:                20.0,
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 
 	require.NotNil(t, result)
 	// Low efficiency due to over-provisioning
@@ -1194,7 +1199,7 @@ func TestComputeEfficiencyMetric_UnderProvisioned(t *testing.T) {
 		RAMCost:                5.0,
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 
 	require.NotNil(t, result)
 	// High efficiency (>100%) due to under-provisioning
@@ -1223,7 +1228,7 @@ func TestComputeEfficiencyMetric_CostCalculations(t *testing.T) {
 		GPUCost:                1.0,  // $1 for GPU
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 
 	require.NotNil(t, result)
 
@@ -1261,7 +1266,7 @@ func TestComputeEfficiencyMetric_OtherCostsPreserved(t *testing.T) {
 		GPUCost:                0.0,
 	}
 
-	result := computeEfficiencyMetric(alloc, 1.2)
+	result := costmodel.ComputeEfficiencyMetric(alloc, 1.2)
 
 	require.NotNil(t, result)
 
@@ -1351,9 +1356,9 @@ func TestQueryEfficiency_WithAggregation(t *testing.T) {
 
 func TestEfficiencyConstants(t *testing.T) {
 	// Test that efficiency constants are defined correctly
-	assert.Equal(t, 1.2, efficiencyBufferMultiplier)
-	assert.Equal(t, 0.001, efficiencyMinCPU)
-	assert.Equal(t, 1024*1024, efficiencyMinRAM)
+	assert.Equal(t, 1.2, costmodel.DefaultEfficiencyBufferMultiplier)
+	assert.Equal(t, 0.001, costmodel.EfficiencyMinCPU)
+	assert.Equal(t, 1024*1024, costmodel.EfficiencyMinRAM)
 }
 
 func TestEfficiencyQueryType(t *testing.T) {

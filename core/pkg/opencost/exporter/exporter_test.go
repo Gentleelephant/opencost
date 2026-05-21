@@ -81,7 +81,7 @@ func NewMockDataSourceWith(resolution time.Duration) *MockDataSource {
 	}
 }
 
-func (mds *MockDataSource) RegisterEndPoints(router *httprouter.Router)                   {}
+func (mds *MockDataSource) RegisterEndPoints(prefix string, router *httprouter.Router)    {}
 func (mds *MockDataSource) RegisterDiagnostics(diagService diagnostics.DiagnosticService) {}
 func (mds *MockDataSource) Metrics() source.MetricsQuerier                                { return nil }
 func (mds *MockDataSource) ClusterMap() clusters.ClusterMap                               { return nil }

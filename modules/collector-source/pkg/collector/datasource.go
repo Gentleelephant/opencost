@@ -119,7 +119,7 @@ func NewCollectorDataSource(
 	}
 }
 
-func (c *collectorDataSource) RegisterEndPoints(router *httprouter.Router) {
+func (c *collectorDataSource) RegisterEndPoints(prefix string, router *httprouter.Router) {
 
 }
 

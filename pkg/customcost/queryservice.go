@@ -21,6 +21,22 @@ func NewQueryService(querier Querier) *QueryService {
 	}
 }
 
+// GetCustomCostTotalHandler returns aggregated custom costs.
+// @Summary      查询自定义成本汇总
+// @Tags         CustomCost
+// @Description  返回自定义成本汇总结果，支持窗口、聚合、过滤、累计和排序。
+// @Param        window         query  string  true   "查询窗口。必填。"
+// @Param        aggregate      query  string  false  "聚合维度。"
+// @Param        accumulate     query  string  false  "累计粒度。默认 day。"
+// @Param        filter         query  string  false  "CustomCost 过滤条件。"
+// @Param        costType       query  string  false  "成本类型。默认 blended。"
+// @Param        sortBy         query  string  false  "排序字段。"
+// @Param        sortDirection  query  string  false  "排序方向。支持 asc、desc。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      500  {string}  string
+// @Router       /customCost/total [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/customCost/total [get]
 func (qs *QueryService) GetCustomCostTotalHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		tracer := otel.Tracer(tracerName)
@@ -58,6 +74,22 @@ func (qs *QueryService) GetCustomCostTotalHandler() func(w http.ResponseWriter, 
 	}
 }
 
+// GetCustomCostTimeseriesHandler returns timeseries custom costs.
+// @Summary      查询自定义成本时序
+// @Tags         CustomCost
+// @Description  返回自定义成本时序结果，支持窗口、聚合、过滤、累计和排序。
+// @Param        window         query  string  true   "查询窗口。必填。"
+// @Param        aggregate      query  string  false  "聚合维度。"
+// @Param        accumulate     query  string  false  "累计粒度。默认 day。"
+// @Param        filter         query  string  false  "CustomCost 过滤条件。"
+// @Param        costType       query  string  false  "成本类型。默认 blended。"
+// @Param        sortBy         query  string  false  "排序字段。"
+// @Param        sortDirection  query  string  false  "排序方向。支持 asc、desc。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      500  {string}  string
+// @Router       /customCost/timeseries [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/customCost/timeseries [get]
 func (qs *QueryService) GetCustomCostTimeseriesHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		tracer := otel.Tracer(tracerName)

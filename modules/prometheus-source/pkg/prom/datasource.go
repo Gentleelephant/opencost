@@ -376,21 +376,29 @@ func (pds *PrometheusDataSource) PrometheusContexts() *ContextFactory {
 	return pds.promContexts
 }
 
-func (pds *PrometheusDataSource) RegisterEndPoints(router *httprouter.Router) {
+func (pds *PrometheusDataSource) RegisterEndPoints(prefix string, router *httprouter.Router) {
+	// helper that registers both legacy and prefixed paths
+	registerGET := func(path string, handle httprouter.Handle) {
+		router.GET(path, handle)
+		if prefix != "" {
+			router.GET(prefix+path, handle)
+		}
+	}
+
 	// endpoints migrated from server
-	router.GET("/validatePrometheus", pds.prometheusMetadata)
-	router.GET("/prometheusRecordingRules", pds.prometheusRecordingRules)
-	router.GET("/prometheusConfig", pds.prometheusConfig)
-	router.GET("/prometheusTargets", pds.prometheusTargets)
-	router.GET("/status", pds.status)
+	registerGET("/validatePrometheus", pds.prometheusMetadata)
+	registerGET("/prometheusRecordingRules", pds.prometheusRecordingRules)
+	registerGET("/prometheusConfig", pds.prometheusConfig)
+	registerGET("/prometheusTargets", pds.prometheusTargets)
+	registerGET("/status", pds.status)
 
 	// prom query proxies
-	router.GET("/prometheusQuery", pds.prometheusQuery)
-	router.GET("/prometheusQueryRange", pds.prometheusQueryRange)
+	registerGET("/prometheusQuery", pds.prometheusQuery)
+	registerGET("/prometheusQueryRange", pds.prometheusQueryRange)
 
 	// diagnostics
-	router.GET("/diagnostics/requestQueue", pds.prometheusQueueState)
-	router.GET("/diagnostics/prometheusMetrics", pds.prometheusMetrics)
+	registerGET("/diagnostics/requestQueue", pds.prometheusQueueState)
+	registerGET("/diagnostics/prometheusMetrics", pds.prometheusMetrics)
 }
 
 // RegisterDiagnostics registers any custom data source diagnostics with the `DiagnosticService` that can

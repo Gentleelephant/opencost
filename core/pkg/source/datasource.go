@@ -148,7 +148,9 @@ type MetricsQuerier interface {
 
 type OpenCostDataSource interface {
 	// RegisterEndPoints registers any custom endpoints that can be used for diagnostics or debug purposes.
-	RegisterEndPoints(router *httprouter.Router)
+	// prefix is the API route prefix (e.g. "/kapis/costwise.wiztelemetry.io/v1alpha1") to register
+	// prefixed variants alongside legacy paths.
+	RegisterEndPoints(prefix string, router *httprouter.Router)
 
 	// RegisterDiagnostics registers any custom data source diagnostics with the `DiagnosticService` that can
 	// be used to report externally.

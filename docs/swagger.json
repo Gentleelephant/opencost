@@ -1,68 +1,697 @@
 {
-  "openapi": "3.0.1",
+  "openapi": "3.0.0",
   "info": {
+    "description": "Swagger documentation for the OpenCost costmodel HTTP API.",
     "title": "OpenCost API",
-    "description": "The OpenCost API provides real-time and historical reporting of Kubernetes cloud costs.",
+    "contact": {},
     "license": {
       "name": "Apache 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "version": "1.0.0"
+    "version": "1.0"
   },
-  "servers": [
-    {
-      "url": "http://localhost:9003",
-      "description": "kubectl port-forward --namespace opencost service/opencost 9003"
-    }
-  ],
   "paths": {
-    "/allocation": {
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/allNodePricing": {
       "get": {
-        "summary": "query for costs and resources allocated to Kubernetes workloads",
-        "description": "The standard OpenCost API query for costs and resources allocated to Kubernetes workloads.  Note that 'data' is an array of sets (one per 'step').\n",
-        "parameters": [
-          {
-            "name": "window",
-            "in": "query",
-            "required": true,
-            "description": "Duration of time over which to query. Accepts: words like `today`, `lastweek`; durations like `30m`, `7d`; RFC3339 date pairs; or Unix timestamps.",
-            "schema": {
-              "type": "string"
-            },
-            "examples": {
-              "today": {
-                "value": "today"
-              },
-              "lastweek": {
-                "value": "lastweek"
-              },
-              "range": {
-                "value": "2024-01-01T00:00:00Z,2024-01-02T00:00:00Z"
+        "description": "返回当前云提供商下所有节点规格的定价信息。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "查询节点定价",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
               }
             }
           },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation": {
+      "get": {
+        "description": "返回成本分配明细数据，支持聚合、过滤、idle、共享 idle、比例资产成本和 CSV 导出。",
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "查询成本分配明细",
+        "parameters": [
           {
+            "description": "时间窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度，多个值使用英文逗号分隔。",
             "name": "aggregate",
             "in": "query",
-            "description": "Field by which to aggregate. e.g., `namespace`, `controller`, `label:app`.",
             "schema": {
               "type": "string"
-            },
-            "example": "namespace"
+            }
           },
           {
-            "name": "step",
+            "description": "是否包含 idle 成本。",
+            "name": "includeIdle",
             "in": "query",
-            "description": "Duration of a single allocation set. Default is `window`.",
             "schema": {
-              "type": "string"
-            },
-            "example": "1d"
+              "type": "boolean"
+            }
           },
           {
+            "description": "是否按节点级别计算 idle。",
+            "name": "idleByNode",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否共享负载均衡成本。",
+            "name": "sharelb",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否纳入比例资产资源成本。",
+            "name": "includeProportionalAssetResourceCosts",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否附带聚合元数据。",
+            "name": "includeAggregatedMetadata",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否回摊 idle 成本。",
+            "name": "shareIdle",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "累计粒度。",
             "name": "accumulate",
             "in": "query",
-            "description": "If true, sums the entire window into a single result set.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "显式累计粒度，覆盖 accumulate。",
+            "name": "accumulateBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询步长。",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "返回格式；传 csv 导出 CSV。",
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation/autocomplete": {
+      "get": {
+        "description": "兼容 Kubecost 的 allocation autocomplete 接口。当前支持 label、annotation、cluster、node、namespace、pod、container、controller、controllerKind、providerID、service。",
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "查询分配字段自动补全候选项",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "字段名。支持 label、annotation、cluster、node、namespace、pod、container、controller、controllerKind、providerID、service。",
+            "name": "field",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "搜索关键字，按包含关系过滤候选项。",
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation/compute": {
+      "get": {
+        "description": "返回成本分配明细数据，支持聚合、过滤、idle、共享 idle、比例资产成本和 CSV 导出。",
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "查询成本分配明细",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度，多个值使用英文逗号分隔。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "是否包含 idle 成本。",
+            "name": "includeIdle",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否按节点级别计算 idle。",
+            "name": "idleByNode",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否共享负载均衡成本。",
+            "name": "sharelb",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否纳入比例资产资源成本。",
+            "name": "includeProportionalAssetResourceCosts",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否附带聚合元数据。",
+            "name": "includeAggregatedMetadata",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否回摊 idle 成本。",
+            "name": "shareIdle",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "累计粒度。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "显式累计粒度，覆盖 accumulate。",
+            "name": "accumulateBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询步长。",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "返回格式；传 csv 导出 CSV。",
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation/compute/summary": {
+      "get": {
+        "description": "返回成本分配摘要数据，支持窗口、聚合、过滤、累积和 CSV 导出。",
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "查询成本分配摘要",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。示例：window=7d、window=today、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度，多个值使用英文逗号分隔。示例：aggregate=namespace,label:app",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。支持 true、all、hour、day、week、month。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "显式累计粒度，覆盖 accumulate。",
+            "name": "accumulateBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询步长。示例：step=1d",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "返回格式；传 csv 导出 CSV。",
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation/summary": {
+      "get": {
+        "description": "返回成本分配摘要数据，支持窗口、聚合、过滤、累积和 CSV 导出。",
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "查询成本分配摘要",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。示例：window=7d、window=today、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度，多个值使用英文逗号分隔。示例：aggregate=namespace,label:app",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。支持 true、all、hour、day、week、month。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "显式累计粒度，覆盖 accumulate。",
+            "name": "accumulateBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询步长。示例：step=1d",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "返回格式；传 csv 导出 CSV。",
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/allocation/summary/topline": {
+      "get": {
+        "description": "兼容 Kubecost allocation/summary/topline 的概览接口，返回整个查询窗口的 combined total 摘要。\n适合顶部卡片、总览页和趋势页头部指标。返回结构固定为 numResults + combined.allocations.total。\n当前仅支持 window、aggregate、filter、idle、idleByNode、shareIdle、accumulate、step、resolution。",
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "查询成本分配 topline 摘要",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。示例：window=7d、window=1d、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。支持 namespace、cluster、node、controllerKind、controller、pod、container、label:<key>、annotation:<key>。示例：aggregate=namespace",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。语法与 /allocation 保持一致。示例：filter=cluster:%22host%22%2Bnamespace:%22default%22",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Prometheus 查询分辨率。默认 1m。示例：resolution=5m",
+            "name": "resolution",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询步长。默认等于整个 window。示例：step=1d",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。支持：true、all、hour、day、week、month。该接口最终始终返回整个窗口的 combined total，但会按该粒度先组织分配集合。示例：accumulate=day",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "是否包含 idle 成本。示例：idle=true",
+            "name": "idle",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否按节点级别计算 idle。仅在 idle=true 时有意义。示例：idleByNode=true",
+            "name": "idleByNode",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "是否将 idle 成本按规则分摊回工作负载。示例：shareIdle=true",
+            "name": "shareIdle",
+            "in": "query",
             "schema": {
               "type": "boolean"
             }
@@ -70,11 +699,31 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "OK",
             "content": {
-              "application/json": {
+              "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/AllocationResponse"
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
                 }
               }
             }
@@ -82,13 +731,408 @@
         }
       }
     },
-    "/assets": {
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/assets": {
       "get": {
-        "summary": "query for underlying infrastructure assets",
-        "description": "Returns the costs of Nodes, Disks, and Load Balancers.",
+        "description": "查询集群中的原始或聚合资产数据，包括节点、磁盘、网络、负载均衡器等。\n不传 aggregate 时返回单个 AssetSet；传 aggregate=type 时返回按时间聚合后的资产集合列表。\n参数处理顺序为：先按 filter 过滤资产；如传 aggregate，再按 step 或 accumulate 组织时间桶，最后按 type 聚合。",
+        "tags": [
+          "Asset"
+        ],
+        "summary": "查询资产数据",
         "parameters": [
           {
+            "description": "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today、window=week、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
             "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "按集群过滤资产。支持单个或多个集群，多个集群用英文逗号分隔。该参数会与 filter 做 AND 合并。示例：cluster=prod、cluster=prod,staging",
+            "name": "cluster",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[<key>]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field<~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=assetType:%22node%22、filter=cluster:%22prod%22%2Bprovider:%22aws%22、filter=label[team]:%22platform%22。注意：URL 中 + 建议编码为 %2B",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。当前仅支持 type。留空时返回原始资产集合；传 type 时返回按资产类型聚合后的结果。示例：aggregate=type",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "固定时间桶宽度。仅在传 aggregate=type 时生效。支持 Go duration 风格，如 12h、24h。用于按固定时长切分窗口；不能与 accumulate 同时使用。示例：window=7d&aggregate=type&step=12h",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "时间累积方式。仅在传 aggregate=type 时生效。支持：true、all、day、week、month。含义：按自然时间粒度或整个窗口累积；不能与 step 同时使用。示例：accumulate=all 返回整个窗口的汇总；accumulate=day 返回按天累积",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/assets/carbon": {
+      "get": {
+        "description": "查询资产的碳足迹估算数据，基于资产成本数据推导碳排放信息。\n该路由仅在启用 Carbon Estimates 时注册；若当前部署未启用，可能返回 404。\n参数处理顺序为：先按 window 取资产，再按 filter 过滤，然后计算碳排放结果。",
+        "tags": [
+          "Asset"
+        ],
+        "summary": "查询资产碳排放数据",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "按集群过滤资产。支持单个或多个集群，多个集群用英文逗号分隔。该参数会与 filter 做 AND 合并。示例：cluster=prod、cluster=prod,staging",
+            "name": "cluster",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "资产过滤条件，语法与 /assets、/assets/graph 保持一致。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[<key>]。示例：filter=assetType:%22node%22、filter=cluster:%22prod%22%2Bprovider:%22aws%22",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/assets/graph": {
+      "get": {
+        "description": "查询资产图表数据，返回按时间分桶后的资产成本曲线。\n参数处理顺序为：先按 filter 过滤资产，再按 step 或 accumulate 组织时间桶，再按 aggregate 聚合，最后按成本降序并应用 offset/limit。\n适合资产趋势图、TopN 图表、按集群/类型/标签观察资产成本变化。\n每个时间片除 items 外，还会返回 totalCost，表示该时间片内所有图表项的总成本，可直接用于计算单项占比。",
+        "tags": [
+          "Asset"
+        ],
+        "summary": "查询资产图表数据",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。支持相对时间和绝对时间范围。示例：window=24h、window=7d、window=today、window=week、window=2026-05-01T00:00:00Z,2026-05-08T00:00:00Z",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。默认 type。当前仅支持单个资产维度，常用值：type、name、cluster、provider、service、category、account、project、providerID、label:<key>。示例：aggregate=cluster、aggregate=service、aggregate=label:team",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "固定时间桶宽度。支持 Go duration 风格，如 12h、24h。用于按固定时长切分窗口；不能与 accumulate 同时使用。示例：window=7d&step=12h&aggregate=type",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "时间粒度。默认 day。支持：hour、day、week、month。含义：按自然时间粒度返回图表桶；不能与 step 同时使用。示例：accumulate=hour 用于 24 小时趋势；accumulate=week 用于周维度报表",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "按集群过滤资产。支持单个或多个集群，多个集群用英文逗号分隔。该参数会与 filter 做 AND 合并。示例：cluster=prod、cluster=prod,staging",
+            "name": "cluster",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "资产过滤条件，使用声明式过滤语法。支持字段：assetType、name、category、cluster、project、provider、providerID、account、service、label[<key>]。常用操作：等于 field:%22value%22，不等于 field!:%22value%22，包含 field~:%22value%22，前缀 field<~:%22prefix%22；AND 使用 +，OR 使用 |。示例：filter=assetType:%22node%22、filter=provider:%22aws%22%2BassetType:%22disk%22、filter=cluster:%22prod%22%2Blabel[team]:%22platform%22。注意：URL 中 + 建议编码为 %2B，避免被解释为空格",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "图表项偏移量。默认 0。对每个时间片内按成本降序排列后的结果进行跳过，用于分页或查看 TopN 之后的条目。示例：offset=0 返回前 N 个；offset=10 表示跳过前 10 个",
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每个时间片返回的最大图表项数量。默认 25。仅影响返回展示数量，不改变底层成本计算。示例：limit=10 返回每个时间片成本最高的 10 个聚合项",
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/athenaUpdate": {
+      "post": {
+        "description": "使用请求体中的 JSON 更新 Athena 账单集成配置，并在成功后刷新定价数据。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "更新 Athena 配置",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/azureStorageUpdate": {
+      "post": {
+        "description": "使用请求体中的 JSON 更新 Azure Storage 账单集成配置，并在成功后刷新定价数据。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "更新 Azure Storage 配置",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/bigqueryUpdate": {
+      "post": {
+        "description": "使用请求体中的 JSON 更新 BigQuery 账单集成配置，并在成功后刷新定价数据。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "更新 BigQuery 配置",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/delete": {
+      "get": {
+        "description": "删除指定 integrationKey 的云集成配置。通常受管理员鉴权保护。",
+        "tags": [
+          "CloudConfig"
+        ],
+        "summary": "删除云集成配置",
+        "parameters": [
+          {
+            "description": "集成 Key。",
+            "name": "integrationKey",
             "in": "query",
             "required": true,
             "schema": {
@@ -98,11 +1142,32 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "OK",
             "content": {
-              "application/json": {
+              "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/AssetsResponse"
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -110,13 +1175,26 @@
         }
       }
     },
-    "/cloudCost": {
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/disable": {
       "get": {
-        "summary": "query for cloud provider billing data",
-        "description": "Retrieves non-K8s cloud provider costs via cloud integration.",
+        "description": "停用指定 integrationKey 和 source 的云集成配置。通常受管理员鉴权保护。",
+        "tags": [
+          "CloudConfig"
+        ],
+        "summary": "停用云集成配置",
         "parameters": [
           {
-            "name": "window",
+            "description": "集成 Key。",
+            "name": "integrationKey",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "配置来源。",
+            "name": "source",
             "in": "query",
             "required": true,
             "schema": {
@@ -126,11 +1204,1708 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "OK",
             "content": {
-              "application/json": {
+              "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudCostResponse"
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/enable": {
+      "get": {
+        "description": "启用指定 integrationKey 和 source 的云集成配置。通常受管理员鉴权保护。",
+        "tags": [
+          "CloudConfig"
+        ],
+        "summary": "启用云集成配置",
+        "parameters": [
+          {
+            "description": "集成 Key。",
+            "name": "integrationKey",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "配置来源。",
+            "name": "source",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/export": {
+      "get": {
+        "description": "导出全部或指定 integrationKey 的云集成配置，返回内容会自动脱敏。通常受管理员鉴权保护。",
+        "tags": [
+          "CloudConfig"
+        ],
+        "summary": "导出云集成配置",
+        "parameters": [
+          {
+            "description": "指定要导出的集成 Key。",
+            "name": "integrationKey",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost": {
+      "get": {
+        "description": "返回非 Kubernetes 云成本原始数据，支持窗口、聚合、累积和过滤。",
+        "tags": [
+          "CloudCost"
+        ],
+        "summary": "查询云账单原始成本",
+        "parameters": [
+          {
+            "description": "查询窗口。必填，必须为闭区间 UTC 时间窗口。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度，多个值使用英文逗号分隔。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CloudCost 过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/rebuild": {
+      "get": {
+        "description": "触发全部或指定 integrationKey 的云成本重建。通常受管理员鉴权保护，需显式传 commit=true 确认。",
+        "tags": [
+          "CloudCost"
+        ],
+        "summary": "重建云成本流水线",
+        "parameters": [
+          {
+            "description": "确认执行，传 true 或 1。",
+            "name": "commit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "指定要重建的集成 Key。",
+            "name": "integrationKey",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Not Implemented",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/repair": {
+      "get": {
+        "description": "触发全部或指定 integrationKey 的云成本修复，可限定 window。通常受管理员鉴权保护。",
+        "tags": [
+          "CloudCost"
+        ],
+        "summary": "修复云成本数据",
+        "parameters": [
+          {
+            "description": "需要修复的 UTC 时间窗口。",
+            "name": "window",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "指定要修复的集成 Key。",
+            "name": "integrationKey",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Not Implemented",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/status": {
+      "get": {
+        "description": "返回所有云账单集成配置和 ingestion 状态。",
+        "tags": [
+          "CloudCost"
+        ],
+        "summary": "查询云成本集成状态",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Not Implemented",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/view/graph": {
+      "get": {
+        "description": "返回适用于图表展示的云成本聚合结果。",
+        "tags": [
+          "CloudCost"
+        ],
+        "summary": "查询云成本图表视图",
+        "parameters": [
+          {
+            "description": "查询窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CloudCost 过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "成本指标。默认 amortizedNetCost。",
+            "name": "costMetric",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "返回条目上限。",
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "结果偏移量。",
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "排序字段。支持 name、cost、kubernetesPercent。",
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序方向。支持 asc、desc。",
+            "name": "sortByOrder",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/view/table": {
+      "get": {
+        "description": "返回表格视图的云成本数据，支持 JSON 与 CSV 导出。",
+        "tags": [
+          "CloudCost"
+        ],
+        "summary": "查询云成本表格视图",
+        "parameters": [
+          {
+            "description": "查询窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CloudCost 过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "成本指标。默认 amortizedNetCost。",
+            "name": "costMetric",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "返回条目上限。",
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "结果偏移量。",
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "排序字段。支持 name、cost、kubernetesPercent。",
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序方向。支持 asc、desc。",
+            "name": "sortByOrder",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "返回格式；传 csv 导出 CSV。",
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/view/totals": {
+      "get": {
+        "description": "返回云成本总览指标，用于卡片或顶部摘要。",
+        "tags": [
+          "CloudCost"
+        ],
+        "summary": "查询云成本总览视图",
+        "parameters": [
+          {
+            "description": "查询窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CloudCost 过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "成本指标。默认 amortizedNetCost。",
+            "name": "costMetric",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序字段。",
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序方向。",
+            "name": "sortByOrder",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/clusterInfo": {
+      "get": {
+        "description": "返回当前集群的基础元数据。",
+        "tags": [
+          "Cluster"
+        ],
+        "summary": "查询集群信息",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/clusterInfoMap": {
+      "get": {
+        "description": "返回集群 ID 到集群信息的映射表。",
+        "tags": [
+          "Cluster"
+        ],
+        "summary": "查询集群映射表",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/costDataModel": {
+      "get": {
+        "description": "返回指定时间窗口内的原始成本数据记录，可按命名空间过滤，并可只返回指定字段。",
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "查询原始成本数据模型",
+        "parameters": [
+          {
+            "description": "查询窗口时长，使用 duration 格式。示例：24h、7d",
+            "name": "timeWindow",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "相对当前时间的偏移量，使用 duration 格式。示例：24h",
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "仅返回指定字段，多个字段使用英文逗号分隔。",
+            "name": "filterFields",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "按命名空间过滤。",
+            "name": "namespace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/customCost/timeseries": {
+      "get": {
+        "description": "返回自定义成本时序结果，支持窗口、聚合、过滤、累计和排序。",
+        "tags": [
+          "CustomCost"
+        ],
+        "summary": "查询自定义成本时序",
+        "parameters": [
+          {
+            "description": "查询窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。默认 day。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CustomCost 过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "成本类型。默认 blended。",
+            "name": "costType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序字段。",
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序方向。支持 asc、desc。",
+            "name": "sortDirection",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/customCost/total": {
+      "get": {
+        "description": "返回自定义成本汇总结果，支持窗口、聚合、过滤、累计和排序。",
+        "tags": [
+          "CustomCost"
+        ],
+        "summary": "查询自定义成本汇总",
+        "parameters": [
+          {
+            "description": "查询窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "累计粒度。默认 day。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "CustomCost 过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "成本类型。默认 blended。",
+            "name": "costType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序字段。",
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "排序方向。支持 asc、desc。",
+            "name": "sortDirection",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/customPricing": {
+      "get": {
+        "description": "返回当前生效的自定义定价配置内容。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "查询自定义定价配置",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/efficiency": {
+      "get": {
+        "description": "基于请求窗口和聚合维度计算资源效率、推荐请求值和潜在成本节省，支持 CSV 导出。",
+        "tags": [
+          "Efficiency"
+        ],
+        "summary": "查询效率优化建议",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "聚合维度。默认 pod。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "推荐资源计算缓冲系数。默认 1.2。",
+            "name": "bufferMultiplier",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "返回格式；传 csv 导出 CSV。",
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters": {
+      "get": {
+        "description": "基于分配数据返回效率摘要。默认按集群聚合，支持按节点或自定义标签聚合。返回 groups + groupBy 结构；未显式传 step 时按日查询后累积为整个窗口的摘要；总成本包含 PV 和 idle，efficiency 与分配摘要页面口径一致。",
+        "tags": [
+          "Efficiency"
+        ],
+        "summary": "查询集群效率摘要",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询步长。未传时按日查询后累积为整个 window。",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "是否将整个窗口累积为单个结果。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "聚合维度，默认 cluster。支持 cluster、node、namespace、controllerKind、controller、pod、container、label:<key>、annotation:<key>。多个值使用英文逗号分隔。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/efficiency/clusters/summary": {
+      "get": {
+        "description": "基于分配数据返回效率摘要。默认按集群聚合，支持按节点或自定义标签聚合。返回 groups + groupBy 结构；未显式传 step 时按日查询后累积为整个窗口的摘要；总成本包含 PV 和 idle，efficiency 与分配摘要页面口径一致。",
+        "tags": [
+          "Efficiency"
+        ],
+        "summary": "查询集群效率摘要",
+        "parameters": [
+          {
+            "description": "时间窗口。必填。",
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "查询步长。未传时按日查询后累积为整个 window。",
+            "name": "step",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "是否将整个窗口累积为单个结果。",
+            "name": "accumulate",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "聚合维度，默认 cluster。支持 cluster、node、namespace、controllerKind、controller、pod、container、label:<key>、annotation:<key>。多个值使用英文逗号分隔。",
+            "name": "aggregate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分配过滤条件。",
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/helmValues": {
+      "get": {
+        "description": "返回当前部署的 Helm values；如果未开启暴露则返回提示信息。",
+        "tags": [
+          "Cluster"
+        ],
+        "summary": "查询 Helm Values",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/installInfo": {
+      "get": {
+        "description": "返回 OpenCost 组件镜像、启动时间、版本以及集群规模信息。",
+        "tags": [
+          "Cluster"
+        ],
+        "summary": "查询安装信息",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.InstallInfo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/installNamespace": {
+      "get": {
+        "description": "返回当前 OpenCost 部署所在的 Kubernetes namespace。",
+        "tags": [
+          "Cluster"
+        ],
+        "summary": "查询安装命名空间",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/managementPlatform": {
+      "get": {
+        "description": "返回当前集群所处管理平台信息，例如托管平台类型。",
+        "tags": [
+          "Cluster"
+        ],
+        "summary": "查询管理平台信息",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/orphanedPods": {
+      "get": {
+        "description": "返回当前集群中没有 OwnerReference 的 Pod 列表。",
+        "tags": [
+          "Cluster"
+        ],
+        "summary": "查询孤儿 Pod",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceCounts": {
+      "get": {
+        "description": "返回不同定价源的记录数量统计。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "查询定价源数量统计",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceStatus": {
+      "get": {
+        "description": "返回当前启用定价源的状态信息。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "查询定价源状态",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceSummary": {
+      "get": {
+        "description": "返回当前定价源的汇总说明信息。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "查询定价源摘要",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/refreshPricing": {
+      "post": {
+        "description": "触发一次云厂商定价数据重新下载与缓存刷新。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "刷新云定价缓存",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/serviceAccountStatus": {
+      "get": {
+        "description": "返回云厂商访问凭据或服务账号的状态。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "查询服务账号状态",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/serviceKey": {
+      "post": {
+        "description": "写入 GCP 服务账号密钥文件。该接口通常受管理员鉴权保护。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "上传服务账号密钥",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/postKapisCostwiseWiztelemetryIoV1alpha1Servicekey"
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/spotUpdate": {
+      "post": {
+        "description": "使用请求体中的 JSON 更新 Spot 相关配置，并在成功后刷新定价数据。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "更新 Spot 配置",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/updateConfigByKey": {
+      "post": {
+        "description": "使用请求体中的 JSON 更新指定云配置，并在成功后刷新定价数据。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "按 Key 更新云配置",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/costmodel.Response"
                 }
               }
             }
@@ -140,177 +2915,77 @@
     }
   },
   "components": {
+    "requestBodies": {
+      "postKapisCostwiseWiztelemetryIoV1alpha1Servicekey": {
+        "content": {
+          "application/x-www-form-urlencoded": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "description": "GCP service account key JSON",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key"
+              ]
+            }
+          }
+        },
+        "required": true
+      }
+    },
     "schemas": {
-      "AllocationResponse": {
+      "costmodel.ContainerInfo": {
         "type": "object",
         "properties": {
-          "code": {
-            "type": "integer"
-          },
-          "status": {
+          "containerName": {
             "type": "string"
           },
-          "data": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/components/schemas/Allocation"
-              }
-            }
+          "image": {
+            "type": "string"
+          },
+          "startTime": {
+            "type": "string"
           }
         }
       },
-      "Allocation": {
+      "costmodel.InstallInfo": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "cpuCost": {
-            "type": "number"
-          },
-          "cpuCoreUsageAverage": {
-            "type": "number"
-          },
-          "ramCost": {
-            "type": "number"
-          },
-          "ramByteUsageAverage": {
-            "type": "number"
-          },
-          "pvCost": {
-            "type": "number"
-          },
-          "networkCost": {
-            "type": "number"
-          },
-          "sharedCost": {
-            "type": "number"
-          },
-          "externalCost": {
-            "type": "number"
-          },
-          "totalCost": {
-            "type": "number"
-          },
-          "minutes": {
-            "type": "number"
-          },
-          "window": {
-            "type": "object",
-            "properties": {
-              "start": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end": {
-                "type": "string",
-                "format": "date-time"
-              }
-            }
-          },
-          "properties": {
+          "clusterInfo": {
             "type": "object",
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/costmodel.ContainerInfo"
+            }
+          },
+          "version": {
+            "type": "string"
           }
         }
       },
-      "AssetsResponse": {
+      "costmodel.Response": {
         "type": "object",
         "properties": {
           "code": {
             "type": "integer"
           },
-          "status": {
+          "data": {},
+          "message": {
             "type": "string"
-          },
-          "data": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/Asset"
-            }
-          }
-        }
-      },
-      "Asset": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string"
-          },
-          "totalCost": {
-            "type": "number"
-          },
-          "cpuCost": {
-            "type": "number"
-          },
-          "ramCost": {
-            "type": "number"
-          },
-          "providerID": {
-            "type": "string"
-          },
-          "window": {
-            "type": "object",
-            "properties": {
-              "start": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end": {
-                "type": "string",
-                "format": "date-time"
-              }
-            }
-          }
-        }
-      },
-      "CloudCostResponse": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer"
           },
           "status": {
             "type": "string"
           },
-          "data": {
-            "type": "object",
-            "properties": {
-              "sets": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CloudCostSet"
-                }
-              }
-            }
-          }
-        }
-      },
-      "CloudCostSet": {
-        "type": "object",
-        "properties": {
-          "cloudCosts": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/CloudCostItem"
-            }
-          }
-        }
-      },
-      "CloudCostItem": {
-        "type": "object",
-        "properties": {
-          "netCost": {
-            "type": "object",
-            "properties": {
-              "cost": {
-                "type": "number"
-              }
-            }
+          "warning": {
+            "type": "string"
           }
         }
       }

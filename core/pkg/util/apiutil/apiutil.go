@@ -8,11 +8,18 @@ import (
 	"github.com/opencost/opencost/core/pkg/env"
 )
 
-func ApplyContainerDiagnosticEndpoints(router *httprouter.Router) {
+func ApplyContainerDiagnosticEndpoints(prefix string, router *httprouter.Router) {
 	router.HandlerFunc("GET", "/healthz", healthz)
+	if prefix != "" {
+		router.HandlerFunc("GET", prefix+"/healthz", healthz)
+	}
 
 	router.GET("/logs/level", GetLogLevel)
 	router.POST("/logs/level", SetLogLevel)
+	if prefix != "" {
+		router.GET(prefix+"/logs/level", GetLogLevel)
+		router.POST(prefix+"/logs/level", SetLogLevel)
+	}
 
 	if env.IsPProfEnabled() {
 		router.HandlerFunc(http.MethodGet, "/debug/pprof/", pprof.Index)
@@ -22,6 +29,16 @@ func ApplyContainerDiagnosticEndpoints(router *httprouter.Router) {
 		router.HandlerFunc(http.MethodGet, "/debug/pprof/trace", pprof.Trace)
 		router.Handler(http.MethodGet, "/debug/pprof/goroutine", pprof.Handler("goroutine"))
 		router.Handler(http.MethodGet, "/debug/pprof/heap", pprof.Handler("heap"))
+
+		if prefix != "" {
+			router.HandlerFunc(http.MethodGet, prefix+"/debug/pprof/", pprof.Index)
+			router.HandlerFunc(http.MethodGet, prefix+"/debug/pprof/cmdline", pprof.Cmdline)
+			router.HandlerFunc(http.MethodGet, prefix+"/debug/pprof/profile", pprof.Profile)
+			router.HandlerFunc(http.MethodGet, prefix+"/debug/pprof/symbol", pprof.Symbol)
+			router.HandlerFunc(http.MethodGet, prefix+"/debug/pprof/trace", pprof.Trace)
+			router.Handler(http.MethodGet, prefix+"/debug/pprof/goroutine", pprof.Handler("goroutine"))
+			router.Handler(http.MethodGet, prefix+"/debug/pprof/heap", pprof.Handler("heap"))
+		}
 	}
 }
 

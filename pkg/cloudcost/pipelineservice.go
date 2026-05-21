@@ -78,6 +78,17 @@ func (dp *PipelineService) Status() []Status {
 
 // GetCloudCostRebuildHandler creates a handler from a http request which initiates a rebuild of cloud cost pipeline, if an
 // integrationKey is provided then it only rebuilds the specified billing integration
+// GetCloudCostRebuildHandler triggers a cloud cost rebuild.
+// @Summary      重建云成本流水线
+// @Tags         CloudCost
+// @Description  触发全部或指定 integrationKey 的云成本重建。通常受管理员鉴权保护，需显式传 commit=true 确认。
+// @Param        commit          query  string  false  "确认执行，传 true 或 1。"
+// @Param        integrationKey  query  string  false  "指定要重建的集成 Key。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      501  {string}  string
+// @Router       /cloudCost/rebuild [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/rebuild [get]
 func (s *PipelineService) GetCloudCostRebuildHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// If Reporting Service is nil, always return 501
 	if s == nil {
@@ -122,6 +133,17 @@ func (s *PipelineService) GetCloudCostRebuildHandler() func(w http.ResponseWrite
 
 // GetCloudCostRepairHandler creates a handler from a http request which initiates a repair of cloud cost for a given window, if an
 // integrationKey is provided then it only repairs the specified integration
+// GetCloudCostRepairHandler repairs cloud cost data for a requested window.
+// @Summary      修复云成本数据
+// @Tags         CloudCost
+// @Description  触发全部或指定 integrationKey 的云成本修复，可限定 window。通常受管理员鉴权保护。
+// @Param        window          query  string  false  "需要修复的 UTC 时间窗口。"
+// @Param        integrationKey  query  string  false  "指定要修复的集成 Key。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      501  {string}  string
+// @Router       /cloudCost/repair [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/repair [get]
 func (s *PipelineService) GetCloudCostRepairHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// If Reporting Service is nil, always return 501
 	if s == nil {
@@ -182,6 +204,14 @@ func (s *PipelineService) GetCloudCostQuerier() Querier {
 }
 
 // GetCloudCostStatusHandler creates a handler from a http request which returns a list of the billing integration status
+// GetCloudCostStatusHandler returns billing integration status.
+// @Summary      查询云成本集成状态
+// @Tags         CloudCost
+// @Description  返回所有云账单集成配置和 ingestion 状态。
+// @Success      200  {object}  map[string]interface{}
+// @Failure      501  {string}  string
+// @Router       /cloudCost/status [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/cloudCost/status [get]
 func (s *PipelineService) GetCloudCostStatusHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// If Reporting Service is nil, always return 501
 	if s == nil {

@@ -178,12 +178,6 @@ func (e *csvExporter) writeCSVToWriter(ctx context.Context, w io.Writer, dates [
 			},
 		},
 		{
-			column: "Cluster",
-			value: func(data rowData) string {
-				return data.alloc.Properties.Cluster
-			},
-		},
-		{
 			column: "Namespace",
 			value: func(data rowData) string {
 				return data.alloc.Properties.Namespace

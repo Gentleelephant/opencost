@@ -22,10 +22,12 @@ import (
 	"github.com/opencost/opencost/core/pkg/util/promutil"
 	costAnalyzerCloud "github.com/opencost/opencost/pkg/cloud/models"
 	km "github.com/opencost/opencost/pkg/kubemodel"
+	"github.com/patrickmn/go-cache"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -39,6 +41,8 @@ const (
 	annotationStorageCost = annotationDomain + "/storage-hourly-cost"
 	annotationNodeCPUCost = annotationDomain + "/node-cpu-hourly-cost"
 	annotationNodeRAMCost = annotationDomain + "/node-ram-hourly-cost"
+
+	defaultAllocStepCacheTTL = 5 * time.Minute
 )
 
 // isCron matches a CronJob name and captures the non-timestamp name
@@ -57,6 +61,7 @@ type CostModel struct {
 	Provider        costAnalyzerCloud.Provider
 	KubeModel       *km.KubeModel
 	pricingMetadata *costAnalyzerCloud.PricingMatchMetadata
+	allocStepCache  *cache.Cache
 }
 
 func NewCostModel(
@@ -81,14 +86,19 @@ func NewCostModel(
 	}
 
 	return &CostModel{
-		Cache:         cache,
-		ClusterMap:    clusterMap,
-		BatchDuration: batchDuration,
-		DataSource:    dataSource,
-		Provider:      provider,
-		RequestGroup:  requestGroup,
-		KubeModel:     kubeModel,
+		Cache:          cache,
+		ClusterMap:     clusterMap,
+		BatchDuration:  batchDuration,
+		DataSource:     dataSource,
+		Provider:       provider,
+		RequestGroup:   requestGroup,
+		KubeModel:      kubeModel,
+		allocStepCache: newAllocStepCache(),
 	}
+}
+
+func newAllocStepCache() *cache.Cache {
+	return cache.New(defaultAllocStepCacheTTL, 2*defaultAllocStepCacheTTL)
 }
 
 func (cm *CostModel) ComputeKubeModelSet(start, end time.Time) (*kubemodel.KubeModelSet, error) {
@@ -1677,15 +1687,31 @@ func (cm *CostModel) QueryAllocation(window opencost.Window, step time.Duration,
 	stepEnd := stepStart.Add(step)
 	var isAKS bool
 	for queryWindow.End().After(stepStart) {
-		allocSet, err := cm.ComputeAllocation(stepStart, stepEnd)
-		if err != nil {
-			return nil, fmt.Errorf("error computing allocations for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
-		}
+		var allocSet *opencost.AllocationSet
 
 		if includeIdle {
-			assetSet, err := cm.ComputeAssets(stepStart, stepEnd)
-			if err != nil {
-				return nil, fmt.Errorf("error computing assets for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
+			var g errgroup.Group
+			var assetSet *opencost.AssetSet
+
+			g.Go(func() error {
+				var err error
+				allocSet, err = cm.ComputeAllocation(stepStart, stepEnd)
+				if err != nil {
+					return fmt.Errorf("error computing allocations for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
+				}
+				return nil
+			})
+			g.Go(func() error {
+				var err error
+				assetSet, err = cm.ComputeAssets(stepStart, stepEnd)
+				if err != nil {
+					return fmt.Errorf("error computing assets for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
+				}
+				return nil
+			})
+
+			if err := g.Wait(); err != nil {
+				return nil, err
 			}
 
 			if includeProportionalAssetResourceCosts {
@@ -1715,6 +1741,12 @@ func (cm *CostModel) QueryAllocation(window opencost.Window, step time.Duration,
 			for _, idleAlloc := range idleSet.Allocations {
 				allocSet.Insert(idleAlloc)
 			}
+		} else {
+			var err error
+			allocSet, err = cm.ComputeAllocation(stepStart, stepEnd)
+			if err != nil {
+				return nil, fmt.Errorf("error computing allocations for %s: %w", opencost.NewClosedWindow(stepStart, stepEnd), err)
+			}
 		}
 
 		asr.Append(allocSet)
@@ -1728,12 +1760,12 @@ func (cm *CostModel) QueryAllocation(window opencost.Window, step time.Duration,
 		parser := allocation.NewAllocationFilterParser()
 		filterNode, err := parser.Parse(filterString)
 		if err != nil {
-			return nil, fmt.Errorf("invalid filter: %w", err)
+			return nil, fmt.Errorf("bad request - invalid filter: %w", err)
 		}
 		compiler := opencost.NewAllocationMatchCompiler(nil)
 		matcher, err := compiler.Compile(filterNode)
 		if err != nil {
-			return nil, fmt.Errorf("failed to compile filter: %w", err)
+			return nil, fmt.Errorf("bad request - failed to compile filter: %w", err)
 		}
 		filteredASR := opencost.NewAllocationSetRange()
 		for _, as := range asr.Allocations {

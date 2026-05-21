@@ -348,6 +348,45 @@ func TestResolveStepFromQuery(t *testing.T) {
 	}
 }
 
+func TestResolveClusterEfficiencyStepAndAccumulate(t *testing.T) {
+	window := opencost.NewClosedWindow(
+		time.Date(2026, 5, 15, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 5, 22, 0, 0, 0, 0, time.UTC),
+	)
+
+	t.Run("unset step uses daily input accumulated to full window", func(t *testing.T) {
+		qp := httputil.NewQueryParams(url.Values{})
+
+		step, accumulateBy, err := resolveClusterEfficiencyStepAndAccumulate(qp, window)
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		}
+		if step != 24*time.Hour {
+			t.Fatalf("expected daily step, got %v", step)
+		}
+		if accumulateBy != opencost.AccumulateOptionAll {
+			t.Fatalf("expected accumulate all, got %s", accumulateBy)
+		}
+	})
+
+	t.Run("explicit step is preserved", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("step", "1w")
+		qp := httputil.NewQueryParams(values)
+
+		step, accumulateBy, err := resolveClusterEfficiencyStepAndAccumulate(qp, window)
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		}
+		if step != 7*24*time.Hour {
+			t.Fatalf("expected weekly step, got %v", step)
+		}
+		if accumulateBy != opencost.AccumulateOptionNone {
+			t.Fatalf("expected no accumulation, got %s", accumulateBy)
+		}
+	})
+}
+
 func TestWeeklyAccumulateTwoWeeksProducesTwoSets(t *testing.T) {
 	start := time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC) // Sunday
 	end := start.Add(14 * 24 * time.Hour)

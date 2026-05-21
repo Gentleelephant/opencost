@@ -12,6 +12,40 @@ import (
 	"github.com/opencost/opencost/pkg/env"
 )
 
+type allocStepCacheValue struct {
+	allocSet *opencost.AllocationSet
+	nodeMap  map[nodeKey]*nodePricing
+}
+
+func allocStepCacheTTL(windowEnd time.Time) time.Duration {
+	now := time.Now()
+	if windowEnd.Add(1 * time.Hour).Before(now) {
+		return 10 * time.Minute
+	}
+	return 30 * time.Second
+}
+
+func allocStepCacheKey(start, end time.Time, resolution time.Duration) string {
+	return fmt.Sprintf("%d-%d-%s-%v",
+		start.Unix(),
+		end.Unix(),
+		resolution.String(),
+		env.IsIngestingPodUID(),
+	)
+}
+
+func cloneNodeMap(src map[nodeKey]*nodePricing) map[nodeKey]*nodePricing {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[nodeKey]*nodePricing, len(src))
+	for k, v := range src {
+		copyVal := *v
+		dst[k] = &copyVal
+	}
+	return dst
+}
+
 // CanCompute should return true if CostModel can act as a valid source for the
 // given time range. In the case of CostModel we want to attempt to compute as
 // long as the range starts in the past. If the CostModel ends up not having
@@ -220,7 +254,18 @@ func (cm *CostModel) computeAllocation(start, end time.Time) (*opencost.Allocati
 	// 1. Build out Pod map from resolution-tuned, batched Pod start/end query
 	// 2. Run and apply the results of the remaining queries to
 	// 3. Build out AllocationSet from completed Pod map
-	resolution := cm.DataSource.Resolution()
+	resolution := time.Duration(0)
+	if cm.DataSource != nil {
+		resolution = cm.DataSource.Resolution()
+	}
+
+	if cm.allocStepCache != nil {
+		key := allocStepCacheKey(start, end, resolution)
+		if val, found := cm.allocStepCache.Get(key); found {
+			cached := val.(*allocStepCacheValue)
+			return cached.allocSet.Clone(), cloneNodeMap(cached.nodeMap), nil
+		}
+	}
 
 	// Create a window spanning the requested query
 	window := opencost.NewWindow(&start, &end)
@@ -282,13 +327,10 @@ func (cm *CostModel) computeAllocation(start, end time.Time) (*opencost.Allocati
 	resChCPURequests := source.WithGroup(grp, ds.QueryCPURequests(start, end))
 	resChCPULimits := source.WithGroup(grp, ds.QueryCPULimits(start, end))
 	resChCPUUsageAvg := source.WithGroup(grp, ds.QueryCPUUsageAvg(start, end))
-	resChCPUUsageMax := source.WithGroup(grp, ds.QueryCPUUsageMax(start, end))
-	resCPUUsageMax, _ := resChCPUUsageMax.Await()
-	// This avoids logspam if there is no data for either metric (e.g. if
-	// the Prometheus didn't exist in the queried window of time).
-	if len(resCPUUsageMax) > 0 {
-		log.Debugf("CPU usage recording rule query returned an empty result when queried at %s over %s. Fell back to subquery. Consider setting up Kubecost CPU usage recording role to reduce query load on Prometheus; subqueries are expensive.", end.String(), durStr)
-	}
+	cpuUsageMaxFutureCh := make(chan *source.Future[source.CPUUsageMaxResult], 1)
+	go func() {
+		cpuUsageMaxFutureCh <- ds.QueryCPUUsageMax(start, end)
+	}()
 
 	// GPU Queries
 	resChIsGpuShared := source.WithGroup(grp, ds.QueryIsGPUShared(start, end))
@@ -359,6 +401,8 @@ func (cm *CostModel) computeAllocation(start, end time.Time) (*opencost.Allocati
 	resCPURequests, _ := resChCPURequests.Await()
 	resCPULimits, _ := resChCPULimits.Await()
 	resCPUUsageAvg, _ := resChCPUUsageAvg.Await()
+	resChCPUUsageMax := <-cpuUsageMaxFutureCh
+	resCPUUsageMax, cpuUsageMaxErr := resChCPUUsageMax.Await()
 	resRAMBytesAllocated, _ := resChRAMBytesAllocated.Await()
 	resRAMRequests, _ := resChRAMRequests.Await()
 	resRAMLimits, _ := resChRAMLimits.Await()
@@ -418,6 +462,11 @@ func (cm *CostModel) computeAllocation(start, end time.Time) (*opencost.Allocati
 	resJobLabels, _ := resChJobLabels.Await()
 	resLBCostPerHr, _ := resChLBCostPerHr.Await()
 	resLBActiveMins, _ := resChLBActiveMins.Await()
+
+	if cpuUsageMaxErr != nil {
+		log.Errorf("CostModel.ComputeAllocation: CPU usage max query error %s", cpuUsageMaxErr)
+		return allocSet, nil, cpuUsageMaxErr
+	}
 
 	if grp.HasErrors() {
 		for _, err := range grp.Errors() {
@@ -550,6 +599,13 @@ func (cm *CostModel) computeAllocation(start, end time.Time) (*opencost.Allocati
 			alloc.Name = fmt.Sprintf("%s/%s/%s/%s/%s", cluster, nodeName, namespace, podName, container)
 			allocSet.Set(alloc)
 		}
+	}
+
+	if cm.allocStepCache != nil {
+		cm.allocStepCache.Set(allocStepCacheKey(start, end, resolution), &allocStepCacheValue{
+			allocSet: allocSet.Clone(),
+			nodeMap:  cloneNodeMap(nodeMap),
+		}, allocStepCacheTTL(end))
 	}
 
 	return allocSet, nodeMap, nil

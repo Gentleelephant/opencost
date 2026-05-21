@@ -30,6 +30,16 @@ func (c *Controller) cloudCostChecks() func(w http.ResponseWriter, r *http.Reque
 }
 
 // GetExportConfigHandler creates a handler from a http request which exports an integration via the integrationController
+// GetExportConfigHandler exports cloud integration configs with secrets sanitized.
+// @Summary      导出云集成配置
+// @Tags         CloudConfig
+// @Description  导出全部或指定 integrationKey 的云集成配置，返回内容会自动脱敏。通常受管理员鉴权保护。
+// @Param        integrationKey  query  string  false  "指定要导出的集成 Key。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      503  {string}  string
+// @Router       /cloud/config/export [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/export [get]
 func (c *Controller) GetExportConfigHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// perform basic checks to ensure that the pipeline can be accessed
 	fn := c.cloudCostChecks()
@@ -162,6 +172,17 @@ func ParseConfig(configType string, body io.Reader) (cloud.KeyedConfig, error) {
 }
 
 // GetEnableConfigHandler creates a handler from a http request which enables an integration via the integrationController
+// GetEnableConfigHandler enables a cloud integration config.
+// @Summary      启用云集成配置
+// @Tags         CloudConfig
+// @Description  启用指定 integrationKey 和 source 的云集成配置。通常受管理员鉴权保护。
+// @Param        integrationKey  query  string  true  "集成 Key。"
+// @Param        source          query  string  true  "配置来源。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      503  {string}  string
+// @Router       /cloud/config/enable [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/enable [get]
 func (c *Controller) GetEnableConfigHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// perform basic checks to ensure that the pipeline can be accessed
 	fn := c.cloudCostChecks()
@@ -195,6 +216,17 @@ func (c *Controller) GetEnableConfigHandler() func(w http.ResponseWriter, r *htt
 }
 
 // GetDisableConfigHandler creates a handler from a http request which disables an integration via the integrationController
+// GetDisableConfigHandler disables a cloud integration config.
+// @Summary      停用云集成配置
+// @Tags         CloudConfig
+// @Description  停用指定 integrationKey 和 source 的云集成配置。通常受管理员鉴权保护。
+// @Param        integrationKey  query  string  true  "集成 Key。"
+// @Param        source          query  string  true  "配置来源。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      503  {string}  string
+// @Router       /cloud/config/disable [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/disable [get]
 func (c *Controller) GetDisableConfigHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// perform basic checks to ensure that the pipeline can be accessed
 	fn := c.cloudCostChecks()
@@ -229,6 +261,16 @@ func (c *Controller) GetDisableConfigHandler() func(w http.ResponseWriter, r *ht
 
 // GetDeleteConfigHandler creates a handler from a http request which deletes an integration via the integrationController
 // if there are no other integrations with the given integration key, it also clears the data.
+// GetDeleteConfigHandler deletes a cloud integration config.
+// @Summary      删除云集成配置
+// @Tags         CloudConfig
+// @Description  删除指定 integrationKey 的云集成配置。通常受管理员鉴权保护。
+// @Param        integrationKey  query  string  true  "集成 Key。"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {string}  string
+// @Failure      503  {string}  string
+// @Router       /cloud/config/delete [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/cloud/config/delete [get]
 func (c *Controller) GetDeleteConfigHandler() func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	// perform basic checks to ensure that the pipeline can be accessed
 	fn := c.cloudCostChecks()

@@ -35,6 +35,7 @@ import (
 	"github.com/opencost/opencost/core/pkg/clusters"
 	sysenv "github.com/opencost/opencost/core/pkg/env"
 	"github.com/opencost/opencost/core/pkg/log"
+	"github.com/opencost/opencost/core/pkg/opencost"
 	"github.com/opencost/opencost/core/pkg/util/json"
 	"github.com/opencost/opencost/modules/collector-source/pkg/collector"
 	"github.com/opencost/opencost/modules/prometheus-source/pkg/prom"
@@ -52,6 +53,9 @@ const (
 	RFC3339Milli         = "2006-01-02T15:04:05.000Z"
 	CustomPricingSetting = "CustomPricing"
 	DiscountSetting      = "Discount"
+	RoutePrefix          = "/kapis/costwise.wiztelemetry.io/v1alpha1"
+	defaultQueryCacheTTL = 60 * time.Second
+	queryCacheTTLEnvVar  = "OPENCOST_QUERY_CACHE_TTL_SECONDS"
 )
 
 var (
@@ -75,10 +79,88 @@ type Accesses struct {
 	MetricsEmitter      *CostModelMetricsEmitter
 	// SettingsCache stores current state of app settings
 	SettingsCache *cache.Cache
+	// QueryCache stores query responses for repeated API queries
+	QueryCache *cache.Cache
 	// settingsSubscribers tracks channels through which changes to different
 	// settings will be published in a pub/sub model
 	settingsSubscribers map[string][]chan string
 	settingsMutex       sync.Mutex
+}
+
+func newQueryCache() *cache.Cache {
+	ttl := queryCacheTTL()
+	if ttl <= 0 {
+		return nil
+	}
+	return cache.New(ttl, 2*ttl)
+}
+
+func queryCacheTTL() time.Duration {
+	seconds := sysenv.GetInt(queryCacheTTLEnvVar, int(defaultQueryCacheTTL.Seconds()))
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func queryCacheKey(endpoint string, r *http.Request) string {
+	if r != nil && r.URL != nil {
+		return fmt.Sprintf("%s:%s?%s", endpoint, r.URL.Path, r.URL.Query().Encode())
+	}
+	return endpoint
+}
+
+func (a *Accesses) getQueryCacheResponse(endpoint string, r *http.Request) ([]byte, bool) {
+	if a == nil || a.QueryCache == nil {
+		return nil, false
+	}
+
+	val, found := a.QueryCache.Get(queryCacheKey(endpoint, r))
+	if !found {
+		return nil, false
+	}
+
+	resp, ok := val.([]byte)
+	return resp, ok
+}
+
+func (a *Accesses) setQueryCacheResponseWithTTL(endpoint string, r *http.Request, resp []byte, ttl time.Duration) {
+	if a == nil || a.QueryCache == nil || len(resp) == 0 {
+		return
+	}
+
+	a.QueryCache.Set(queryCacheKey(endpoint, r), resp, ttl)
+}
+
+// cacheTTLForWindow returns an appropriate cache TTL based on the query window,
+// building on top of the global OPENCOST_QUERY_CACHE_TTL_SECONDS baseline.
+// Historical windows (ending more than 1 hour ago) use max(baseTTL, 5m) to
+// improve cache hit rate while respecting any longer user-configured TTL.
+// Near-realtime windows use min(baseTTL, 30s) to stay fresh while respecting
+// any shorter user-configured TTL.
+func cacheTTLForWindow(w *opencost.Window) time.Duration {
+	if w == nil || w.End() == nil {
+		return cache.DefaultExpiration
+	}
+
+	baseTTL := queryCacheTTL()
+	windowEnd := *w.End()
+	now := time.Now()
+
+	// If the window end is more than 1 hour in the past, treat as historical
+	if windowEnd.Add(1 * time.Hour).Before(now) {
+		// Historical window: use at least 5 minutes, or the global config if longer
+		if baseTTL > 5*time.Minute {
+			return baseTTL
+		}
+		return 5 * time.Minute
+	}
+
+	// Near-realtime window: cap at 30 seconds, or use the global config if shorter
+	if baseTTL > 0 && baseTTL < 30*time.Second {
+		return baseTTL
+	}
+	return 30 * time.Second
 }
 
 func filterFields(fields string, data map[string]*CostData) map[string]CostData {
@@ -163,7 +245,75 @@ func WriteData(w http.ResponseWriter, data interface{}, err error) {
 	proto.WriteData(w, data)
 }
 
+func registerGETWithPrefix(router *httprouter.Router, path string, handle httprouter.Handle) {
+	router.GET(path, handle)
+	router.GET(RoutePrefix+path, handle)
+}
+
+func registerPOSTWithPrefix(router *httprouter.Router, path string, handle httprouter.Handle) {
+	router.POST(path, handle)
+	router.POST(RoutePrefix+path, handle)
+}
+
+func registerAccessesRoutes(router *httprouter.Router, a *Accesses) {
+	registerGETWithPrefix(router, "/costDataModel", a.CostDataModel)
+	registerGETWithPrefix(router, "/allocation/autocomplete", a.ComputeAllocationAutocompleteHandler)
+	registerGETWithPrefix(router, "/allocation/compute", a.ComputeAllocationHandler)
+	registerGETWithPrefix(router, "/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
+	registerGETWithPrefix(router, "/efficiency/clusters", a.ComputeAllocationHandlerClusterEfficiencySummary)
+	registerGETWithPrefix(router, "/efficiency/clusters/summary", a.ComputeAllocationHandlerClusterEfficiencySummary)
+	registerGETWithPrefix(router, "/efficiency", a.ComputeEfficiencyHandler)
+	registerGETWithPrefix(router, "/allNodePricing", a.GetAllNodePricing)
+	registerGETWithPrefix(router, "/customPricing", a.GetCustomPricing)
+	registerPOSTWithPrefix(router, "/spotUpdate", a.UpdateSpotInfoConfigs)
+	registerPOSTWithPrefix(router, "/athenaUpdate", a.UpdateAthenaInfoConfigs)
+	registerPOSTWithPrefix(router, "/bigqueryUpdate", a.UpdateBigQueryInfoConfigs)
+	registerPOSTWithPrefix(router, "/azureStorageUpdate", a.UpdateAzureStorageConfigs)
+	registerPOSTWithPrefix(router, "/updateConfigByKey", a.UpdateConfigByKey)
+	registerPOSTWithPrefix(router, "/refreshPricing", a.RefreshPricingData)
+	registerGETWithPrefix(router, "/managementPlatform", a.ManagementPlatform)
+	registerGETWithPrefix(router, "/clusterInfo", a.ClusterInfo)
+	registerGETWithPrefix(router, "/clusterInfoMap", a.GetClusterInfoMap)
+	registerGETWithPrefix(router, "/serviceAccountStatus", a.GetServiceAccountStatus)
+	registerGETWithPrefix(router, "/pricingSourceStatus", a.GetPricingSourceStatus)
+	registerGETWithPrefix(router, "/pricingSourceSummary", a.GetPricingSourceSummary)
+	registerGETWithPrefix(router, "/pricingSourceCounts", a.GetPricingSourceCounts)
+	registerGETWithPrefix(router, "/orphanedPods", a.GetOrphanedPods)
+	registerGETWithPrefix(router, "/installNamespace", a.GetInstallNamespace)
+	registerGETWithPrefix(router, "/installInfo", a.GetInstallInfo)
+	registerPOSTWithPrefix(router, "/serviceKey", adminAuthMiddleware(a.AddServiceKey))
+	registerGETWithPrefix(router, "/helmValues", a.GetHelmValues)
+}
+
+func registerCloudCostRoutes(router *httprouter.Router, cloudCostQueryService *cloudcost.QueryService, cloudCostPipelineService *cloudcost.PipelineService, cloudConfigController *cloudconfig.Controller) {
+	registerGETWithPrefix(router, "/cloudCost", cloudCostQueryService.GetCloudCostHandler())
+	registerGETWithPrefix(router, "/cloudCost/view/graph", cloudCostQueryService.GetCloudCostViewGraphHandler())
+	registerGETWithPrefix(router, "/cloudCost/view/totals", cloudCostQueryService.GetCloudCostViewTotalsHandler())
+	registerGETWithPrefix(router, "/cloudCost/view/table", cloudCostQueryService.GetCloudCostViewTableHandler(nil))
+
+	registerGETWithPrefix(router, "/cloudCost/status", cloudCostPipelineService.GetCloudCostStatusHandler())
+	registerGETWithPrefix(router, "/cloudCost/rebuild", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRebuildHandler()))
+	registerGETWithPrefix(router, "/cloudCost/repair", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRepairHandler()))
+	registerGETWithPrefix(router, "/cloud/config/export", adminAuthMiddleware(cloudConfigController.GetExportConfigHandler()))
+	registerGETWithPrefix(router, "/cloud/config/enable", adminAuthMiddleware(cloudConfigController.GetEnableConfigHandler()))
+	registerGETWithPrefix(router, "/cloud/config/disable", adminAuthMiddleware(cloudConfigController.GetDisableConfigHandler()))
+	registerGETWithPrefix(router, "/cloud/config/delete", adminAuthMiddleware(cloudConfigController.GetDeleteConfigHandler()))
+}
+
+func registerCustomCostRoutes(router *httprouter.Router, customCostQueryService *customcost.QueryService) {
+	registerGETWithPrefix(router, "/customCost/total", customCostQueryService.GetCustomCostTotalHandler())
+	registerGETWithPrefix(router, "/customCost/timeseries", customCostQueryService.GetCustomCostTimeseriesHandler())
+}
+
 // RefreshPricingData needs to be called when a new node joins the fleet, since we cache the relevant subsets of pricing data to avoid storing the whole thing.
+// RefreshPricingData refreshes pricing data from the configured cloud provider.
+// @Summary      刷新云定价缓存
+// @Tags         Pricing
+// @Description  触发一次云厂商定价数据重新下载与缓存刷新。
+// @Success      200  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /refreshPricing [post]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/refreshPricing [post]
 func (a *Accesses) RefreshPricingData(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -176,6 +326,19 @@ func (a *Accesses) RefreshPricingData(w http.ResponseWriter, r *http.Request, ps
 	WriteData(w, nil, err)
 }
 
+// CostDataModel returns raw cost data records for a requested time window.
+// @Summary      查询原始成本数据模型
+// @Tags         Allocation
+// @Description  返回指定时间窗口内的原始成本数据记录，可按命名空间过滤，并可只返回指定字段。
+// @Param        timeWindow    query  string  true   "查询窗口时长，使用 duration 格式。示例：24h、7d"
+// @Param        offset        query  string  false  "相对当前时间的偏移量，使用 duration 格式。示例：24h"
+// @Param        filterFields  query  string  false  "仅返回指定字段，多个字段使用英文逗号分隔。"
+// @Param        namespace     query  string  false  "按命名空间过滤。"
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /costDataModel [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/costDataModel [get]
 func (a *Accesses) CostDataModel(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -223,6 +386,14 @@ func (a *Accesses) CostDataModel(w http.ResponseWriter, r *http.Request, ps http
 	}
 }
 
+// GetAllNodePricing returns pricing data for all discovered node types.
+// @Summary      查询节点定价
+// @Tags         Pricing
+// @Description  返回当前云提供商下所有节点规格的定价信息。
+// @Success      200  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /allNodePricing [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/allNodePricing [get]
 func (a *Accesses) GetAllNodePricing(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -231,6 +402,112 @@ func (a *Accesses) GetAllNodePricing(w http.ResponseWriter, r *http.Request, ps 
 	WriteData(w, data, err)
 }
 
+// GetCustomPricing returns the active custom pricing configuration.
+// @Summary      查询自定义定价配置
+// @Tags         Pricing
+// @Description  返回当前生效的自定义定价配置内容。
+// @Success      200  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /customPricing [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/customPricing [get]
+func (a *Accesses) GetCustomPricing(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	data, err := a.CloudProvider.GetConfig()
+	WriteData(w, data, err)
+}
+
+func (a *Accesses) updateCloudConfig(w http.ResponseWriter, r *http.Request, updateType string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	data, err := a.CloudProvider.UpdateConfig(r.Body, updateType)
+	WriteData(w, data, err)
+	if err == nil {
+		err = a.CloudProvider.DownloadPricingData()
+		if err != nil {
+			log.Errorf("Error redownloading data on config update: %s", err.Error())
+		}
+	}
+}
+
+// UpdateSpotInfoConfigs updates spot pricing integration configuration.
+// @Summary      更新 Spot 配置
+// @Tags         Pricing
+// @Accept       json
+// @Description  使用请求体中的 JSON 更新 Spot 相关配置，并在成功后刷新定价数据。
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /spotUpdate [post]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/spotUpdate [post]
+func (a *Accesses) UpdateSpotInfoConfigs(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	a.updateCloudConfig(w, r, "spotinfo")
+}
+
+// UpdateAthenaInfoConfigs updates Athena billing integration configuration.
+// @Summary      更新 Athena 配置
+// @Tags         Pricing
+// @Accept       json
+// @Description  使用请求体中的 JSON 更新 Athena 账单集成配置，并在成功后刷新定价数据。
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /athenaUpdate [post]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/athenaUpdate [post]
+func (a *Accesses) UpdateAthenaInfoConfigs(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	a.updateCloudConfig(w, r, "athenainfo")
+}
+
+// UpdateBigQueryInfoConfigs updates BigQuery billing integration configuration.
+// @Summary      更新 BigQuery 配置
+// @Tags         Pricing
+// @Accept       json
+// @Description  使用请求体中的 JSON 更新 BigQuery 账单集成配置，并在成功后刷新定价数据。
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /bigqueryUpdate [post]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/bigqueryUpdate [post]
+func (a *Accesses) UpdateBigQueryInfoConfigs(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	a.updateCloudConfig(w, r, "bigqueryupdate")
+}
+
+// UpdateAzureStorageConfigs updates Azure storage billing integration configuration.
+// @Summary      更新 Azure Storage 配置
+// @Tags         Pricing
+// @Accept       json
+// @Description  使用请求体中的 JSON 更新 Azure Storage 账单集成配置，并在成功后刷新定价数据。
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /azureStorageUpdate [post]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/azureStorageUpdate [post]
+func (a *Accesses) UpdateAzureStorageConfigs(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	a.updateCloudConfig(w, r, "AzureStorage")
+}
+
+// UpdateConfigByKey updates cloud pricing configuration by key.
+// @Summary      按 Key 更新云配置
+// @Tags         Pricing
+// @Accept       json
+// @Description  使用请求体中的 JSON 更新指定云配置，并在成功后刷新定价数据。
+// @Success      200  {object}  costmodel.Response
+// @Failure      400  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /updateConfigByKey [post]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/updateConfigByKey [post]
+func (a *Accesses) UpdateConfigByKey(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	a.updateCloudConfig(w, r, "")
+}
+
+// ManagementPlatform returns the detected management platform metadata.
+// @Summary      查询管理平台信息
+// @Tags         Cluster
+// @Description  返回当前集群所处管理平台信息，例如托管平台类型。
+// @Success      200  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /managementPlatform [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/managementPlatform [get]
 func (a *Accesses) ManagementPlatform(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -239,6 +516,13 @@ func (a *Accesses) ManagementPlatform(w http.ResponseWriter, r *http.Request, ps
 	WriteData(w, data, err)
 }
 
+// ClusterInfo returns cluster metadata for the current cluster.
+// @Summary      查询集群信息
+// @Tags         Cluster
+// @Description  返回当前集群的基础元数据。
+// @Success      200  {object}  costmodel.Response
+// @Router       /clusterInfo [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/clusterInfo [get]
 func (a *Accesses) ClusterInfo(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -248,6 +532,13 @@ func (a *Accesses) ClusterInfo(w http.ResponseWriter, r *http.Request, ps httpro
 	WriteData(w, data, nil)
 }
 
+// GetClusterInfoMap returns the cluster map used by the cost model.
+// @Summary      查询集群映射表
+// @Tags         Cluster
+// @Description  返回集群 ID 到集群信息的映射表。
+// @Success      200  {object}  costmodel.Response
+// @Router       /clusterInfoMap [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/clusterInfoMap [get]
 func (a *Accesses) GetClusterInfoMap(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -257,6 +548,13 @@ func (a *Accesses) GetClusterInfoMap(w http.ResponseWriter, r *http.Request, ps 
 	WriteData(w, data, nil)
 }
 
+// GetServiceAccountStatus returns cloud provider service account status.
+// @Summary      查询服务账号状态
+// @Tags         Pricing
+// @Description  返回云厂商访问凭据或服务账号的状态。
+// @Success      200  {object}  costmodel.Response
+// @Router       /serviceAccountStatus [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/serviceAccountStatus [get]
 func (a *Accesses) GetServiceAccountStatus(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -264,6 +562,13 @@ func (a *Accesses) GetServiceAccountStatus(w http.ResponseWriter, _ *http.Reques
 	WriteData(w, a.CloudProvider.ServiceAccountStatus(), nil)
 }
 
+// GetPricingSourceStatus returns current pricing source health information.
+// @Summary      查询定价源状态
+// @Tags         Pricing
+// @Description  返回当前启用定价源的状态信息。
+// @Success      200  {object}  costmodel.Response
+// @Router       /pricingSourceStatus [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceStatus [get]
 func (a *Accesses) GetPricingSourceStatus(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -272,6 +577,14 @@ func (a *Accesses) GetPricingSourceStatus(w http.ResponseWriter, _ *http.Request
 	WriteData(w, data, nil)
 }
 
+// GetPricingSourceCounts returns counts of pricing records by source.
+// @Summary      查询定价源数量统计
+// @Tags         Pricing
+// @Description  返回不同定价源的记录数量统计。
+// @Success      200  {object}  costmodel.Response
+// @Failure      500  {object}  costmodel.Response
+// @Router       /pricingSourceCounts [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceCounts [get]
 func (a *Accesses) GetPricingSourceCounts(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -280,6 +593,13 @@ func (a *Accesses) GetPricingSourceCounts(w http.ResponseWriter, _ *http.Request
 	WriteData(w, data, err)
 }
 
+// GetPricingSourceSummary returns a human-readable pricing source summary.
+// @Summary      查询定价源摘要
+// @Tags         Pricing
+// @Description  返回当前定价源的汇总说明信息。
+// @Success      200  {object}  costmodel.Response
+// @Router       /pricingSourceSummary [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/pricingSourceSummary [get]
 func (a *Accesses) GetPricingSourceSummary(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -288,6 +608,14 @@ func (a *Accesses) GetPricingSourceSummary(w http.ResponseWriter, r *http.Reques
 	WriteData(w, data, nil)
 }
 
+// GetOrphanedPods returns pods without owner references.
+// @Summary      查询孤儿 Pod
+// @Tags         Cluster
+// @Description  返回当前集群中没有 OwnerReference 的 Pod 列表。
+// @Success      200  {object}  array
+// @Failure      500  {object}  costmodel.Response
+// @Router       /orphanedPods [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/orphanedPods [get]
 func (a *Accesses) GetOrphanedPods(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -309,6 +637,13 @@ func (a *Accesses) GetOrphanedPods(w http.ResponseWriter, r *http.Request, ps ht
 	}
 }
 
+// GetInstallNamespace returns the namespace where OpenCost is installed.
+// @Summary      查询安装命名空间
+// @Tags         Cluster
+// @Description  返回当前 OpenCost 部署所在的 Kubernetes namespace。
+// @Success      200  {string}  string
+// @Router       /installNamespace [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/installNamespace [get]
 func (a *Accesses) GetInstallNamespace(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -329,6 +664,14 @@ type ContainerInfo struct {
 	StartTime     string `json:"startTime"`
 }
 
+// GetInstallInfo returns runtime and deployment metadata for the current OpenCost installation.
+// @Summary      查询安装信息
+// @Tags         Cluster
+// @Description  返回 OpenCost 组件镜像、启动时间、版本以及集群规模信息。
+// @Success      200  {object}  costmodel.InstallInfo
+// @Failure      500  {object}  costmodel.Response
+// @Router       /installInfo [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/installInfo [get]
 func (a *Accesses) GetInstallInfo(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -389,6 +732,16 @@ func GetKubecostContainers(kubeClientSet kubernetes.Interface) ([]ContainerInfo,
 	return containers, nil
 }
 
+// AddServiceKey writes a GCP service account key to the configured secret path.
+// @Summary      上传服务账号密钥
+// @Tags         Pricing
+// @Accept       application/x-www-form-urlencoded
+// @Description  写入 GCP 服务账号密钥文件。该接口通常受管理员鉴权保护。
+// @Param        key  formData  string  true  "GCP service account key JSON"
+// @Success      200  {string}  string
+// @Failure      500  {string}  string
+// @Router       /serviceKey [post]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/serviceKey [post]
 func (a *Accesses) AddServiceKey(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -405,6 +758,14 @@ func (a *Accesses) AddServiceKey(w http.ResponseWriter, r *http.Request, ps http
 	w.WriteHeader(http.StatusOK)
 }
 
+// GetHelmValues returns the Helm values used for the current installation when enabled.
+// @Summary      查询 Helm Values
+// @Tags         Cluster
+// @Description  返回当前部署的 Helm values；如果未开启暴露则返回提示信息。
+// @Success      200  {string}  string
+// @Failure      500  {string}  string
+// @Router       /helmValues [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/helmValues [get]
 func (a *Accesses) GetHelmValues(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -538,6 +899,7 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 		Model:               costModel,
 		MetricsEmitter:      metricsEmitter,
 		SettingsCache:       settingsCache,
+		QueryCache:          newQueryCache(),
 	}
 
 	// Initialize mechanism for subscribing to settings changes
@@ -551,25 +913,9 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 		a.MetricsEmitter.Start()
 	}
 
-	a.DataSource.RegisterEndPoints(router)
+	a.DataSource.RegisterEndPoints(RoutePrefix, router)
 
-	router.GET("/costDataModel", a.CostDataModel)
-	router.GET("/allocation/compute", a.ComputeAllocationHandler)
-	router.GET("/allocation/compute/summary", a.ComputeAllocationHandlerSummary)
-	router.GET("/allNodePricing", a.GetAllNodePricing)
-	router.POST("/refreshPricing", a.RefreshPricingData)
-	router.GET("/managementPlatform", a.ManagementPlatform)
-	router.GET("/clusterInfo", a.ClusterInfo)
-	router.GET("/clusterInfoMap", a.GetClusterInfoMap)
-	router.GET("/serviceAccountStatus", a.GetServiceAccountStatus)
-	router.GET("/pricingSourceStatus", a.GetPricingSourceStatus)
-	router.GET("/pricingSourceSummary", a.GetPricingSourceSummary)
-	router.GET("/pricingSourceCounts", a.GetPricingSourceCounts)
-	router.GET("/orphanedPods", a.GetOrphanedPods)
-	router.GET("/installNamespace", a.GetInstallNamespace)
-	router.GET("/installInfo", a.GetInstallInfo)
-	router.POST("/serviceKey", adminAuthMiddleware(a.AddServiceKey))
-	router.GET("/helmValues", a.GetHelmValues)
+	registerAccessesRoutes(router, a)
 
 	return a
 }
@@ -616,18 +962,7 @@ func InitializeCloudCost(router *httprouter.Router) *cloudcost.PipelineService {
 	repoQuerier := cloudcost.NewRepositoryQuerier(repo)
 	cloudCostQueryService := cloudcost.NewQueryService(repoQuerier, repoQuerier)
 
-	router.GET("/cloudCost", cloudCostQueryService.GetCloudCostHandler())
-	router.GET("/cloudCost/view/graph", cloudCostQueryService.GetCloudCostViewGraphHandler())
-	router.GET("/cloudCost/view/totals", cloudCostQueryService.GetCloudCostViewTotalsHandler())
-	router.GET("/cloudCost/view/table", cloudCostQueryService.GetCloudCostViewTableHandler(nil))
-
-	router.GET("/cloudCost/status", cloudCostPipelineService.GetCloudCostStatusHandler())
-	router.GET("/cloudCost/rebuild", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRebuildHandler()))
-	router.GET("/cloudCost/repair", adminAuthMiddleware(cloudCostPipelineService.GetCloudCostRepairHandler()))
-	router.GET("/cloud/config/export", adminAuthMiddleware(cloudConfigController.GetExportConfigHandler()))
-	router.GET("/cloud/config/enable", adminAuthMiddleware(cloudConfigController.GetEnableConfigHandler()))
-	router.GET("/cloud/config/disable", adminAuthMiddleware(cloudConfigController.GetDisableConfigHandler()))
-	router.GET("/cloud/config/delete", adminAuthMiddleware(cloudConfigController.GetDeleteConfigHandler()))
+	registerCloudCostRoutes(router, cloudCostQueryService, cloudCostPipelineService, cloudConfigController)
 
 	return cloudCostPipelineService
 }
@@ -646,8 +981,48 @@ func InitializeCustomCost(router *httprouter.Router) *customcost.PipelineService
 	customCostQuerier := customcost.NewRepositoryQuerier(hourlyRepo, dailyRepo, ingConfig.HourlyDuration, ingConfig.DailyDuration)
 	customCostQueryService := customcost.NewQueryService(customCostQuerier)
 
-	router.GET("/customCost/total", customCostQueryService.GetCustomCostTotalHandler())
-	router.GET("/customCost/timeseries", customCostQueryService.GetCustomCostTimeseriesHandler())
+	registerCustomCostRoutes(router, customCostQueryService)
 
 	return customCostPipelineService
+}
+
+// Response is the standard JSON envelope for API responses.
+type Response struct {
+	Code    int         `json:"code"`
+	Status  string      `json:"status"`
+	Data    interface{} `json:"data"`
+	Message string      `json:"message,omitempty"`
+	Warning string      `json:"warning,omitempty"`
+}
+
+// WrapData serializes data into the Response envelope and returns bytes.
+func WrapData(data interface{}, err error) []byte {
+	var resp []byte
+	if err != nil {
+		log.Errorf("Error returned to client: %s", err.Error())
+		resp, _ = json.Marshal(&Response{
+			Code:    http.StatusInternalServerError,
+			Status:  "error",
+			Message: err.Error(),
+			Data:    data,
+		})
+	} else {
+		resp, err = json.Marshal(&Response{
+			Code:   http.StatusOK,
+			Status: "success",
+			Data:   data,
+		})
+		if err != nil {
+			log.Errorf("error marshaling response json: %s", err.Error())
+		}
+	}
+	return resp
+}
+
+func (a *Accesses) Status(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	proto.WriteData(w, map[string]interface{}{
+		"status":  "ok",
+		"version": version.FriendlyVersion(),
+	})
 }

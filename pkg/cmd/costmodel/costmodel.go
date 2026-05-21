@@ -29,6 +29,29 @@ import (
 
 const shutdownTimeout = 30 * time.Second
 
+func registerOpenCostUIRoutes(router *httprouter.Router, a *costmodel.Accesses, carbonEnabled bool) {
+	costmodelRoutes := []struct {
+		path   string
+		handle httprouter.Handle
+	}{
+		{path: "/allocation", handle: a.ComputeAllocationHandler},
+		{path: "/allocation/summary", handle: a.ComputeAllocationHandlerSummary},
+		{path: "/allocation/summary/topline", handle: a.ComputeAllocationHandlerSummaryTopline},
+		{path: "/assets", handle: a.ComputeAssetsHandler},
+		{path: "/assets/graph", handle: a.ComputeAssetsGraphHandler},
+	}
+
+	for _, route := range costmodelRoutes {
+		router.GET(route.path, route.handle)
+		router.GET(costmodel.RoutePrefix+route.path, route.handle)
+	}
+
+	if carbonEnabled {
+		router.GET("/assets/carbon", a.ComputeAssetsCarbonHandler)
+		router.GET(costmodel.RoutePrefix+"/assets/carbon", a.ComputeAssetsCarbonHandler)
+	}
+}
+
 func Execute(conf *Config) error {
 	log.Infof("Starting cost-model version %s", version.FriendlyVersion())
 	if conf == nil {
@@ -50,13 +73,8 @@ func Execute(conf *Config) error {
 			log.Errorf("couldn't start CSV export worker: %v", err)
 		}
 
-		// Register OpenCost Specific Endpoints
-		router.GET("/allocation", a.ComputeAllocationHandler)
-		router.GET("/allocation/summary", a.ComputeAllocationHandlerSummary)
-		router.GET("/assets", a.ComputeAssetsHandler)
-		if conf.CarbonEstimatesEnabled {
-			router.GET("/assets/carbon", a.ComputeAssetsCarbonHandler)
-		}
+		// Register OpenCost UI-compatible endpoints on both legacy and prefixed paths.
+		registerOpenCostUIRoutes(router, a, conf.CarbonEstimatesEnabled)
 
 	}
 
@@ -74,6 +92,7 @@ func Execute(conf *Config) error {
 	// this endpoint is intentionally left out of the "if env.IsCustomCostEnabled()" conditional; in the handler, it is
 	// valid for CustomCostPipelineService to be nil
 	router.GET("/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
+	router.GET(costmodel.RoutePrefix+"/customCost/status", customCostPipelineService.GetCustomCostStatusHandler())
 
 	// Initialize MCP Server if enabled and Kubernetes is available
 	if conf.MCPServerEnabled && a != nil {
@@ -95,7 +114,7 @@ func Execute(conf *Config) error {
 		}
 	}
 
-	apiutil.ApplyContainerDiagnosticEndpoints(router)
+	apiutil.ApplyContainerDiagnosticEndpoints(costmodel.RoutePrefix, router)
 
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/", router)
