@@ -121,7 +121,7 @@ func GetPrometheusQueryResolution() time.Duration {
 
 // GetMaxQueryConcurrency returns the environment variable value for MaxQueryConcurrencyEnvVar
 func GetMaxQueryConcurrency() int {
-	maxQueryConcurrency := env.GetInt(MaxQueryConcurrencyEnvVar, 5)
+	maxQueryConcurrency := env.GetInt(MaxQueryConcurrencyEnvVar, 20)
 	if maxQueryConcurrency <= 0 {
 		return runtime.GOMAXPROCS(0)
 	}
