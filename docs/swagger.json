@@ -2150,6 +2150,43 @@
         }
       }
     },
+    "/kapis/costwise.wiztelemetry.io/v1alpha1/currency": {
+      "get": {
+        "description": "返回当前配置的货币类型（如 $、€、¥ 等），从 customPricing 中提取。",
+        "tags": [
+          "Pricing"
+        ],
+        "summary": "查询货币类型",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/kapis/costwise.wiztelemetry.io/v1alpha1/customCost/timeseries": {
       "get": {
         "description": "返回自定义成本时序结果，支持窗口、聚合、过滤、累计和排序。",

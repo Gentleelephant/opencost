@@ -338,6 +338,7 @@ func registerAccessesRoutes(router *httprouter.Router, a *Accesses) {
 	registerGETWithPrefix(router, "/efficiency", a.ComputeEfficiencyHandler)
 	registerGETWithPrefix(router, "/allNodePricing", a.GetAllNodePricing)
 	registerGETWithPrefix(router, "/customPricing", a.GetCustomPricing)
+	registerGETWithPrefix(router, "/currency", a.GetCurrency)
 	registerPOSTWithPrefix(router, "/spotUpdate", a.UpdateSpotInfoConfigs)
 	registerPOSTWithPrefix(router, "/athenaUpdate", a.UpdateAthenaInfoConfigs)
 	registerPOSTWithPrefix(router, "/bigqueryUpdate", a.UpdateBigQueryInfoConfigs)
@@ -488,6 +489,27 @@ func (a *Accesses) GetCustomPricing(w http.ResponseWriter, r *http.Request, ps h
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	data, err := a.CloudProvider.GetConfig()
 	WriteData(w, data, err)
+}
+
+// GetCurrency returns the configured currency code from custom pricing.
+// @Summary      查询货币类型
+// @Tags         Pricing
+// @Description  返回当前配置的货币类型（如 $、€、¥ 等），从 customPricing 中提取。
+// @Success      200  {object}  map[string]string
+// @Failure      500  {object}  map[string]string
+// @Router       /currency [get]
+// @Router       /kapis/costwise.wiztelemetry.io/v1alpha1/currency [get]
+func (a *Accesses) GetCurrency(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	config, err := a.CloudProvider.GetConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	WriteData(w, map[string]string{"currencyCode": config.CurrencyCode}, nil)
 }
 
 func (a *Accesses) updateCloudConfig(w http.ResponseWriter, r *http.Request, updateType string) {
