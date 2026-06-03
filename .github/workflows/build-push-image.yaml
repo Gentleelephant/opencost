@@ -1,0 +1,68 @@
+name: Build and Push OpenCost Image
+
+on:
+  push:
+    branches:
+      - 'dev'
+    tags:
+      - 'v*'
+    paths:
+      - 'cmd/**'
+      - 'core/**'
+      - 'modules/**'
+      - 'pkg/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - '.github/workflows/build-push-image.yaml'
+
+env:
+  REGISTRY: hub.kubesphere.com.cn
+  IMAGE_NAMESPACE: kubesphere
+  IMAGE_NAME: opencost
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    name: Build and Push OpenCost Image
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to KubeSphere Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.KS_REGISTRY_USER }}
+          password: ${{ secrets.KS_REGISTRY_PASSWORD }}
+
+      - name: Determine Image Tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="latest"
+          fi
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ env.IMAGE_NAME }}:${TAG}"
+          echo "IMAGE=${IMAGE}" >> $GITHUB_OUTPUT
+          echo "Image tag: ${IMAGE}"
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tag.outputs.IMAGE }}
+          build-args: |
+            version=${{ steps.tag.outputs.IMAGE }}
