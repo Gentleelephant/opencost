@@ -21,10 +21,14 @@ env:
   IMAGE_NAMESPACE: birdhk
   IMAGE_NAME: opencost
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     name: Build and Push OpenCost Image
     steps:
       - name: Checkout code
