@@ -17,8 +17,8 @@ on:
       - '.github/workflows/build-push-image.yaml'
 
 env:
-  REGISTRY: hub.kubesphere.com.cn
-  IMAGE_NAMESPACE: kubesphere
+  REGISTRY: docker.io
+  IMAGE_NAMESPACE: birdhk
   IMAGE_NAME: opencost
 
 jobs:
